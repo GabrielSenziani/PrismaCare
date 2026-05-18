@@ -1,5 +1,8 @@
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+
+from app import database
 
 FUSO = ZoneInfo("America/Sao_Paulo")
 MED = {"nome": "Losartana", "dosagem": "50mg", "observacao": ""}
@@ -41,6 +44,101 @@ def test_fluxo_diario_completo(client, headers_a):
     r = client.put(f"/api/confirmacoes/{dose['confirmacao_id']}/confirmar", headers=headers_a)
     assert r.status_code == 200
     assert r.json()["status"] == "CONFIRMADO"
+
+
+def test_confirmacao_persistida_em_utc_iso_com_offset(client, headers_a):
+    _criar_stack(client, headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    confirmacao_id = doses[0]["confirmacao_id"]
+
+    r = client.put(f"/api/confirmacoes/{confirmacao_id}/confirmar", headers=headers_a)
+
+    assert r.status_code == 200
+
+    conn = sqlite3.connect(database.DATABASE_PATH)
+    try:
+        row = conn.execute(
+            "SELECT data_hora_confirmacao FROM confirmacoes WHERE id = ?",
+            (confirmacao_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    persisted = row[0]
+    assert persisted.endswith("+00:00")
+    assert datetime.fromisoformat(persisted).tzinfo == timezone.utc
+
+
+def test_doses_hoje_retorna_confirmacao_convertida_para_timezone_do_usuario(client, headers_a):
+    _criar_stack(client, headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    confirmacao_id = doses[0]["confirmacao_id"]
+    client.put(f"/api/confirmacoes/{confirmacao_id}/confirmar", headers=headers_a)
+
+    atualizadas = client.get("/api/doses/hoje", headers=headers_a).json()
+
+    assert atualizadas[0]["horario_confirmacao"].endswith("-03:00")
+
+
+def test_busca_confirmacao_individual_normaliza_timestamp_para_timezone_do_usuario(client, headers_a):
+    _criar_stack(client, headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    confirmacao_id = doses[0]["confirmacao_id"]
+    client.put(f"/api/confirmacoes/{confirmacao_id}/confirmar", headers=headers_a)
+
+    confirmacao = client.get(f"/api/confirmacoes/{confirmacao_id}", headers=headers_a)
+
+    assert confirmacao.status_code == 200
+    assert confirmacao.json()["data_hora_confirmacao"].endswith("-03:00")
+
+
+def test_doses_hoje_le_confirmacao_legada_em_utc_sem_deslocamento_visual_indevido(client, headers_a):
+    _criar_stack(client, headers_a)
+    client.get("/api/doses/hoje", headers=headers_a)
+
+    conn = sqlite3.connect(database.DATABASE_PATH)
+    try:
+        conn.execute(
+            """
+            UPDATE confirmacoes
+            SET status = 'CONFIRMADO', data_hora_confirmacao = ?
+            WHERE data_hora_prevista = ?
+            """,
+            ("2026-05-18T11:05:00+00:00", f"{_hoje()} 08:00:00"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+
+    assert doses[0]["horario_confirmacao"].startswith("2026-05-18T08:05:00")
+
+
+def test_doses_hoje_le_confirmacao_legada_local_sem_deslocamento_indevido(client, headers_a):
+    _criar_stack(client, headers_a)
+    client.get("/api/doses/hoje", headers=headers_a)
+
+    conn = sqlite3.connect(database.DATABASE_PATH)
+    try:
+        conn.execute(
+            """
+            UPDATE confirmacoes
+            SET status = 'CONFIRMADO', data_hora_confirmacao = ?
+            WHERE data_hora_prevista = ?
+            """,
+            ("2026-05-18 08:05:00", f"{_hoje()} 08:00:00"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+
+    assert doses[0]["horario_confirmacao"].startswith("2026-05-18T08:05:00")
 
 
 def test_doses_nao_duplicadas(client, headers_a):

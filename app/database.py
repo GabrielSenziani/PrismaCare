@@ -11,9 +11,11 @@ _DEFAULT_DB_PATH = os.path.join(_REPO_ROOT, "data", "prismacare.db")
 DATABASE_PATH = os.getenv("DATABASE_PATH", _DEFAULT_DB_PATH)
 os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
-# Padrão de datas: o backend usa o timezone IANA de cada usuário para calcular
-# datas e horários locais. Timestamps são armazenados como strings no formato
-# YYYY-MM-DD HH:MM:SS no horário local do usuário, sem offset.
+# Padrão de datas:
+# - data_hora_prevista: horário de negócio/local do usuário em string
+#   YYYY-MM-DD HH:MM:SS, sem offset.
+# - data_hora_confirmacao: timestamp canônico de evento em UTC ISO com offset.
+#   Na leitura para UI, ele pode ser convertido para o timezone do usuário.
 
 
 def get_connection() -> sqlite3.Connection:
