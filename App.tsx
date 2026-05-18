@@ -6,6 +6,8 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from './src/theme/colors';
 import { AuthProvider, AuthContext } from './src/contexts/AuthContext';
+import { AccessibilityProvider } from './src/contexts/AccessibilityContext';
+import { ToastProvider } from './src/components/Toast';
 
 import AuthIntroScreen from './src/screens/AuthIntroScreen';
 import AuthEntryScreen from './src/screens/AuthEntryScreen';
@@ -18,6 +20,7 @@ import AgendamentosScreen from './src/screens/AgendamentosScreen';
 import ContatosScreen from './src/screens/ContatosScreen';
 import DosesScreen from './src/screens/DosesScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
+import ConfiguracoesScreen from './src/screens/ConfiguracoesScreen';
 import { configureDoseNotifications } from './src/services/notificationService';
 import { syncCurrentDoseReminders } from './src/services/doseReminderSync';
 import { readAuthIntroSeen } from './src/services/appPreferences';
@@ -35,6 +38,7 @@ export type RootStackParamList = {
   Agendamentos: undefined;
   Contatos: undefined;
   Doses: { confirmacaoId?: number } | undefined;
+  Configuracoes: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -101,6 +105,7 @@ function Navigation() {
           <Stack.Screen name="Agendamentos" component={AgendamentosScreen} options={{ title: 'Agendamentos' }} />
           <Stack.Screen name="Contatos" component={ContatosScreen} options={{ title: 'Contatos' }} />
           <Stack.Screen name="Doses" component={DosesScreen} options={{ title: 'Doses de Hoje' }} />
+          <Stack.Screen name="Configuracoes" component={ConfiguracoesScreen} options={{ title: 'Configurações' }} />
         </>
       ) : (
         <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false }} />
@@ -180,9 +185,13 @@ export default function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <AccessibilityProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppShell />
+        </ToastProvider>
+      </AuthProvider>
+    </AccessibilityProvider>
   );
 }
 

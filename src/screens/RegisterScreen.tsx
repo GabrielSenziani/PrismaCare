@@ -1,7 +1,6 @@
 import React, { useContext, useState } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   KeyboardAvoidingView,
   ScrollView,
@@ -11,9 +10,10 @@ import {
   Alert,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import InputField from '../components/InputField';
 import PrimaryButton from '../components/PrimaryButton';
+import AppText from '../components/AppText';
 import { RootStackParamList } from '../../App';
 import { api } from '../services/api';
 import { AuthContext } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ type Props = {
 };
 
 export default function RegisterScreen({ navigation }: Props) {
+  const colors = useColors();
   const { signIn } = useContext(AuthContext);
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
@@ -58,73 +59,72 @@ export default function RegisterScreen({ navigation }: Props) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView
+      style={[styles.flex, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.subtitle}>Preencha os dados para criar sua conta</Text>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <AppText variant="body" color={colors.textSecondary} style={{ marginBottom: 24 }}>
+            Preencha os dados para criar sua conta
+          </AppText>
 
-        <InputField
-          label="Nome completo"
-          iconName="person-outline"
-          placeholder="Seu nome"
-          value={nome}
-          onChangeText={(t) => { setNome(t); setErrors((e) => ({ ...e, nome: '' })); }}
-          error={errors.nome}
-        />
-        <InputField
-          label="E-mail"
-          iconName="mail-outline"
-          placeholder="seuemail@exemplo.com"
-          value={email}
-          onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: '' })); }}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          error={errors.email}
-        />
-        <InputField
-          label="Telefone"
-          iconName="call-outline"
-          placeholder="(11) 99999-9999"
-          value={telefone}
-          onChangeText={(t) => { setTelefone(t); setErrors((e) => ({ ...e, telefone: '' })); }}
-          keyboardType="phone-pad"
-          error={errors.telefone}
-        />
-        <InputField
-          label="Senha"
-          iconName="lock-closed-outline"
-          placeholder="Mínimo 6 caracteres"
-          value={senha}
-          onChangeText={(t) => { setSenha(t); setErrors((e) => ({ ...e, senha: '' })); }}
-          isPassword
-          error={errors.senha}
-        />
+          <InputField
+            label="Nome completo"
+            iconName="person-outline"
+            placeholder="Seu nome"
+            value={nome}
+            onChangeText={(t) => { setNome(t); setErrors((e) => ({ ...e, nome: '' })); }}
+            error={errors.nome}
+          />
+          <InputField
+            label="E-mail"
+            iconName="mail-outline"
+            placeholder="seuemail@exemplo.com"
+            value={email}
+            onChangeText={(t) => { setEmail(t); setErrors((e) => ({ ...e, email: '' })); }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            error={errors.email}
+          />
+          <InputField
+            label="Telefone"
+            iconName="call-outline"
+            placeholder="(11) 99999-9999"
+            value={telefone}
+            onChangeText={(t) => { setTelefone(t); setErrors((e) => ({ ...e, telefone: '' })); }}
+            keyboardType="phone-pad"
+            error={errors.telefone}
+          />
+          <InputField
+            label="Senha"
+            iconName="lock-closed-outline"
+            placeholder="Mínimo 6 caracteres"
+            value={senha}
+            onChangeText={(t) => { setSenha(t); setErrors((e) => ({ ...e, senha: '' })); }}
+            isPassword
+            error={errors.senha}
+          />
 
-        <PrimaryButton
-          title="Criar conta"
-          onPress={handleRegister}
-          loading={loading}
-          iconName="checkmark"
-          style={styles.btn}
-        />
-      </ScrollView>
+          <View style={{ marginTop: 8 }}>
+            <PrimaryButton
+              title="Criar conta"
+              onPress={handleRegister}
+              loading={loading}
+              iconName="checkmark"
+            />
+          </View>
+        </ScrollView>
       </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: colors.background },
+  flex: { flex: 1 },
   scroll: { padding: 24, paddingTop: 16 },
-  subtitle: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 24,
-    fontWeight: '500',
-  },
-  btn: { marginTop: 8 },
 });

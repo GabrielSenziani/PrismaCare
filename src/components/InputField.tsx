@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  Text,
   TouchableOpacity,
   StyleSheet,
   TextInputProps,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { useAccessibility, useColors } from '../contexts/AccessibilityContext';
+import { scaleTypography } from '../theme/typography';
+import AppText from './AppText';
 
 interface InputFieldProps extends TextInputProps {
   label: string;
@@ -27,6 +27,8 @@ export default function InputField({
   onBlur,
   ...rest
 }: InputFieldProps) {
+  const colors = useColors();
+  const { fontScale } = useAccessibility();
   const [visible, setVisible] = useState(false);
   const [focused, setFocused] = useState(false);
 
@@ -42,25 +44,44 @@ export default function InputField({
       ? colors.primary
       : colors.textMuted;
 
+  const bodyStyle = scaleTypography('body', fontScale);
+
   return (
     <View style={styles.wrapper}>
-      <Text style={[styles.label, focused && styles.labelFocused]}>{label}</Text>
+      <AppText
+        variant="caption"
+        color={focused ? colors.primary : colors.textSecondary}
+        style={styles.label}
+      >
+        {label}
+      </AppText>
       <View
         style={[
           styles.inputRow,
-          { borderColor },
-          focused && styles.inputRowFocused,
-          error ? styles.inputErrorBg : null,
+          { borderColor, backgroundColor: colors.surface },
+          focused && { shadowColor: colors.primary, shadowOpacity: 0.15, shadowRadius: 12, elevation: 4 },
+          error ? { backgroundColor: colors.errorBg } : null,
         ]}
       >
-        <View style={[styles.iconWrap, focused && styles.iconWrapFocused]}>
-          <Ionicons name={iconName} size={18} color={iconColor} />
+        <View
+          style={[
+            styles.iconWrap,
+            { backgroundColor: focused ? colors.primaryLight : colors.primarySoft },
+          ]}
+        >
+          <Ionicons name={iconName} size={20} color={iconColor} />
         </View>
         <TextInput
-          style={styles.input}
+          style={[
+            styles.input,
+            { color: colors.textPrimary, fontSize: bodyStyle.fontSize },
+          ]}
           placeholderTextColor={colors.textMuted}
           secureTextEntry={isPassword && !visible}
           autoCapitalize="none"
+          accessibilityLabel={label}
+          accessibilityHint={error}
+          allowFontScaling
           onFocus={(e) => {
             setFocused(true);
             onFocus?.(e);
@@ -75,11 +96,13 @@ export default function InputField({
           <TouchableOpacity
             onPress={() => setVisible((v) => !v)}
             style={styles.eyeBtn}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={visible ? 'Ocultar senha' : 'Mostrar senha'}
           >
             <Ionicons
               name={visible ? 'eye-outline' : 'eye-off-outline'}
-              size={20}
+              size={22}
               color={colors.textSecondary}
             />
           </TouchableOpacity>
@@ -87,8 +110,8 @@ export default function InputField({
       </View>
       {error ? (
         <View style={styles.errorRow}>
-          <Ionicons name="alert-circle" size={13} color={colors.error} />
-          <Text style={styles.errorText}>{error}</Text>
+          <Ionicons name="alert-circle" size={15} color={colors.error} />
+          <AppText variant="caption" color={colors.error}>{error}</AppText>
         </View>
       ) : null}
     </View>
@@ -100,72 +123,42 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   label: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
     marginBottom: 8,
     letterSpacing: 0.3,
-    textTransform: 'uppercase',
-  },
-  labelFocused: {
-    color: colors.primary,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     borderWidth: 1.5,
     borderRadius: 16,
     paddingHorizontal: 6,
     paddingVertical: 4,
-    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
   },
-  inputRowFocused: {
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  inputErrorBg: {
-    backgroundColor: colors.errorBg,
-  },
   iconWrap: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     borderRadius: 10,
-    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
-  iconWrapFocused: {
-    backgroundColor: colors.primaryLight,
-  },
   input: {
     flex: 1,
-    height: 44,
-    fontSize: 15,
-    color: colors.textPrimary,
+    minHeight: 48,
     fontWeight: '500',
   },
   eyeBtn: {
-    padding: 8,
+    padding: 10,
   },
   errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
     paddingHorizontal: 4,
-    gap: 4,
-  },
-  errorText: {
-    fontSize: 12,
-    color: colors.error,
-    fontWeight: '500',
+    gap: 6,
   },
 });

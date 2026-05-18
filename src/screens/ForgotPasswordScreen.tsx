@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
+import AppText from '../components/AppText';
 import { RootStackParamList } from '../../App';
 
 type Props = {
@@ -9,12 +10,22 @@ type Props = {
 };
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
+  const colors = useColors();
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Redefinir Senha</Text>
-      <Text style={styles.subtitle}>Em breve — recuperação de senha em desenvolvimento.</Text>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.back}>← Voltar ao login</Text>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <AppText variant="title" color={colors.primary} style={{ marginBottom: 12 }}>
+        Redefinir Senha
+      </AppText>
+      <AppText variant="body" color={colors.textSecondary} style={{ textAlign: 'center', marginBottom: 32 }}>
+        Em breve — recuperação de senha em desenvolvimento.
+      </AppText>
+      <TouchableOpacity
+        onPress={() => navigation.goBack()}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        accessibilityRole="button"
+        accessibilityLabel="Voltar ao login"
+      >
+        <AppText variant="bodyStrong" color={colors.primary}>← Voltar ao login</AppText>
       </TouchableOpacity>
     </View>
   );
@@ -23,26 +34,8 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: colors.primary,
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  back: {
-    fontSize: 15,
-    color: colors.primary,
-    fontWeight: '600',
   },
 });

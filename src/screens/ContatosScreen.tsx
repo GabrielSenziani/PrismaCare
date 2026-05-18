@@ -1,22 +1,28 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
-  Text,
   FlatList,
   StyleSheet,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { useColors, useAccessibility } from '../contexts/AccessibilityContext';
 import InputField from '../components/InputField';
 import PrimaryButton from '../components/PrimaryButton';
+import AppText from '../components/AppText';
+import { useToast } from '../components/Toast';
+import { triggerHaptic } from '../utils/haptics';
 import { api } from '../services/api';
 
 type Contato = { id: number; nome: string; telefone: string; parentesco: string; ativo: boolean };
 
 export default function ContatosScreen() {
+  const colors = useColors();
+  const { hapticsEnabled } = useAccessibility();
+  const toast = useToast();
   const [lista, setLista] = useState<Contato[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -66,15 +72,19 @@ export default function ContatosScreen() {
           method: 'PATCH',
           body: JSON.stringify({ nome: nome.trim(), telefone: telefone.trim(), parentesco: parentesco.trim() }),
         });
+        toast.show('Contato atualizado', 'success');
       } else {
         await api('/api/contatos', {
           method: 'POST',
           body: JSON.stringify({ nome: nome.trim(), telefone: telefone.trim(), parentesco: parentesco.trim() }),
         });
+        toast.show('Contato cadastrado', 'success');
       }
+      triggerHaptic('success', hapticsEnabled);
       fecharForm();
       await buscar();
     } catch (e: any) {
+      triggerHaptic('error', hapticsEnabled);
       Alert.alert('Erro', e.message);
     } finally {
       setSaving(false);
@@ -100,9 +110,8 @@ export default function ContatosScreen() {
     setDeletingId(contatoId);
     try {
       await api(`/api/contatos/${contatoId}`, { method: 'DELETE' });
-      if (editando?.id === contatoId) {
-        fecharForm();
-      }
+      if (editando?.id === contatoId) fecharForm();
+      toast.show('Contato removido', 'success');
       await buscar();
     } catch (e: any) {
       Alert.alert('Erro', e.message);
@@ -111,67 +120,110 @@ export default function ContatosScreen() {
     }
   }
 
-  if (loading) return <ActivityIndicator style={styles.center} color={colors.primary} size="large" />;
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={lista}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.empty}>Nenhum contato cadastrado.</Text>}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardIcon}>
-              <Ionicons name="person-outline" size={20} color={colors.primary} />
+        ListEmptyComponent={
+          <AppText variant="body" color={colors.textMuted} style={styles.empty}>
+            Nenhum contato cadastrado.
+          </AppText>
+        }
+        renderItem={({ item, index }) => (
+          <Animated.View
+            entering={FadeInDown.delay(index * 50).duration(300).springify().damping(16)}
+            style={[styles.card, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
+          >
+            <View style={[styles.cardIcon, { backgroundColor: colors.primarySoft }]}>
+              <Ionicons name="person-outline" size={24} color={colors.primary} />
             </View>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardTitle}>{item.nome}</Text>
-              <Text style={styles.cardSub}>{item.telefone} · {item.parentesco}</Text>
+              <AppText variant="bodyStrong" color={colors.textPrimary}>{item.nome}</AppText>
+              <AppText variant="caption" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                {item.telefone} · {item.parentesco}
+              </AppText>
             </View>
             <View style={styles.actions}>
-              <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
-                <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: colors.primarySoft }]}
+                onPress={() => {
+                  triggerHaptic('light', hapticsEnabled);
+                  abrirEditar(item);
+                }}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Editar ${item.nome}`}
+              >
+                <Ionicons name="pencil-outline" size={22} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.deleteBtn}
+                style={[styles.actionBtn, { backgroundColor: colors.errorBg }]}
                 onPress={() => confirmarExclusao(item)}
                 disabled={deletingId === item.id}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Excluir ${item.nome}`}
               >
                 {deletingId === item.id ? (
                   <ActivityIndicator size="small" color={colors.error} />
                 ) : (
-                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                  <Ionicons name="trash-outline" size={22} color={colors.error} />
                 )}
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         )}
         ListFooterComponent={
           showForm ? (
-            <View style={styles.form}>
-              <Text style={styles.formTitle}>{editando ? 'Editar Contato' : 'Novo Contato'}</Text>
+            <Animated.View
+              entering={FadeInDown.duration(280).springify().damping(15)}
+              style={[styles.form, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
+            >
+              <AppText variant="heading" color={colors.textPrimary} style={{ marginBottom: 16 }}>
+                {editando ? 'Editar Contato' : 'Novo Contato'}
+              </AppText>
               <InputField label="Nome" iconName="person-outline" placeholder="Nome completo" value={nome} onChangeText={setNome} />
               <InputField label="Telefone" iconName="call-outline" placeholder="(11) 99999-9999" value={telefone} onChangeText={setTelefone} keyboardType="phone-pad" />
               <InputField label="Parentesco" iconName="heart-outline" placeholder="Ex: Filho, Cônjuge" value={parentesco} onChangeText={setParentesco} />
               <View style={styles.formButtons}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={fecharForm}>
-                  <Text style={styles.cancelText}>Cancelar</Text>
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { borderColor: colors.border }]}
+                  onPress={fecharForm}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancelar"
+                >
+                  <AppText variant="bodyStrong" color={colors.textSecondary}>Cancelar</AppText>
                 </TouchableOpacity>
-                <PrimaryButton
-                  title={editando ? 'Atualizar' : 'Salvar'}
-                  onPress={salvar}
-                  loading={saving}
-                  style={styles.saveBtn}
-                />
+                <View style={{ flex: 1 }}>
+                  <PrimaryButton title={editando ? 'Atualizar' : 'Salvar'} onPress={salvar} loading={saving} />
+                </View>
               </View>
-            </View>
+            </Animated.View>
           ) : null
         }
       />
       {!showForm && (
-        <TouchableOpacity style={styles.fab} onPress={() => { setEditando(null); setShowForm(true); }}>
-          <Ionicons name="add" size={28} color={colors.white} />
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: colors.primary, shadowColor: colors.primaryDeep }]}
+          onPress={() => {
+            triggerHaptic('light', hapticsEnabled);
+            setEditando(null);
+            setShowForm(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Cadastrar novo contato"
+        >
+          <Ionicons name="add" size={32} color={colors.white} />
         </TouchableOpacity>
       )}
     </View>
@@ -179,81 +231,66 @@ export default function ContatosScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { padding: 16, paddingBottom: 80 },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40, fontSize: 14 },
+  list: { padding: 16, paddingBottom: 100 },
+  empty: { textAlign: 'center', marginTop: 40 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
     marginBottom: 10,
-    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
   },
   cardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: colors.primarySoft,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  cardInfo: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  cardInfo: { flex: 1, marginRight: 8 },
   actions: { flexDirection: 'row', gap: 8 },
-  editBtn: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: colors.primarySoft,
-  },
-  deleteBtn: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: colors.errorBg,
+  actionBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   form: {
-    backgroundColor: colors.surface,
     borderRadius: 20,
     padding: 20,
     marginTop: 8,
-    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4,
   },
-  formTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 16 },
   formButtons: { flexDirection: 'row', gap: 10, marginTop: 4 },
   cancelBtn: {
     flex: 1,
-    height: 56,
+    minHeight: 56,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 14,
   },
-  cancelText: { color: colors.textSecondary, fontWeight: '600' },
-  saveBtn: { flex: 1 },
   fab: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 28,
     right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primary,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.primaryDeep,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
-  Text,
   FlatList,
   StyleSheet,
   TouchableOpacity,
@@ -10,13 +9,17 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
+import Animated, { FadeInDown, SlideInDown, FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { colors } from '../theme/colors';
+import { useColors, useAccessibility } from '../contexts/AccessibilityContext';
 import { api } from '../services/api';
 import { DoseReminderInput, syncDoseReminders } from '../services/notificationService';
 import PrimaryButton from '../components/PrimaryButton';
+import AppText from '../components/AppText';
+import { useToast } from '../components/Toast';
+import { triggerHaptic } from '../utils/haptics';
 import { formatBusinessTime, formatConfirmationTime } from '../utils/dateTime';
 import { RootStackParamList } from '../../App';
 
@@ -29,11 +32,11 @@ type Dose = DoseReminderInput & {
 };
 
 const STATUS_CONFIG = {
-  PENDENTE:       { label: 'Pendente',       color: '#F59E0B', bg: '#FEF3C7' },
-  CONFIRMADO:     { label: 'Confirmado',     color: '#10B981', bg: '#D1FAE5' },
-  ATRASADO:       { label: 'Atrasado',       color: '#EF4444', bg: '#FEE2E2' },
-  CANCELADO:      { label: 'Cancelado',      color: '#6B7280', bg: '#F3F4F6' },
-  NAO_CONFIRMADO: { label: 'Não Confirmado', color: '#7F1D1D', bg: '#FEE2E2' }, // Tom vermelho escuro/vencido
+  PENDENTE:       { label: 'Pendente',       color: '#B45309', bg: '#FEF3C7' },
+  CONFIRMADO:     { label: 'Confirmado',     color: '#065F46', bg: '#D1FAE5' },
+  ATRASADO:       { label: 'Atrasado',       color: '#991B1B', bg: '#FEE2E2' },
+  CANCELADO:      { label: 'Cancelado',      color: '#374151', bg: '#F3F4F6' },
+  NAO_CONFIRMADO: { label: 'Não Confirmado', color: '#7F1D1D', bg: '#FEE2E2' },
 };
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Doses'>;
@@ -47,6 +50,9 @@ function confirmLabelForStatus(status: Dose['status']) {
 }
 
 export default function DosesScreen({ navigation, route }: Props) {
+  const colors = useColors();
+  const { hapticsEnabled } = useAccessibility();
+  const toast = useToast();
   const [doses, setDoses] = useState<Dose[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -85,21 +91,13 @@ export default function DosesScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const confirmacaoId = route.params?.confirmacaoId;
-    if (!confirmacaoId || loading) {
-      return;
-    }
-
-    if (lastHandledNotificationConfirmacaoIdRef.current === confirmacaoId) {
-      return;
-    }
-
+    if (!confirmacaoId || loading) return;
+    if (lastHandledNotificationConfirmacaoIdRef.current === confirmacaoId) return;
     lastHandledNotificationConfirmacaoIdRef.current = confirmacaoId;
-
     const encontrada = doses.find((item) => item.confirmacao_id === confirmacaoId);
     if (encontrada && canConfirmDose(encontrada.status)) {
       setModalConfirmacaoId(confirmacaoId);
     }
-
     navigation.setParams({ confirmacaoId: undefined });
   }, [doses, loading, navigation, route.params?.confirmacaoId]);
 
@@ -107,9 +105,12 @@ export default function DosesScreen({ navigation, route }: Props) {
     setConfirming(id);
     try {
       await api(`/api/confirmacoes/${id}/confirmar`, { method: 'PUT' });
+      triggerHaptic('success', hapticsEnabled);
+      toast.show('Dose confirmada', 'success');
       setModalConfirmacaoId((current) => (current === id ? null : current));
       await buscar();
     } catch (e: any) {
+      triggerHaptic('error', hapticsEnabled);
       Alert.alert('Erro', e.message);
     } finally {
       setConfirming(null);
@@ -120,58 +121,84 @@ export default function DosesScreen({ navigation, route }: Props) {
     setModalConfirmacaoId(null);
   }
 
-  if (loading) return <ActivityIndicator style={styles.center} color={colors.primary} size="large" />;
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlatList
         data={doses}
         keyExtractor={(item) => String(item.confirmacao_id)}
         contentContainerStyle={styles.list}
-        ListEmptyComponent={<Text style={styles.empty}>Nenhuma dose programada para hoje.</Text>}
-        renderItem={({ item }) => {
+        ListEmptyComponent={
+          <AppText variant="body" color={colors.textMuted} style={styles.empty}>
+            Nenhuma dose programada para hoje.
+          </AppText>
+        }
+        renderItem={({ item, index }) => {
           const cfg = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.PENDENTE;
+          const isConfirming = confirming === item.confirmacao_id;
           return (
-            <View style={styles.card}>
+            <Animated.View
+              entering={FadeInDown.delay(index * 50).duration(320).springify().damping(16)}
+              style={[styles.card, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
+            >
               <View style={styles.cardTop}>
                 <View style={styles.medInfo}>
-                  <Text style={styles.medNome}>{item.medicamento.nome}</Text>
-                  <Text style={styles.medDosagem}>{item.medicamento.dosagem}</Text>
+                  <AppText variant="bodyStrong" color={colors.textPrimary}>{item.medicamento.nome}</AppText>
+                  <AppText variant="caption" color={colors.textSecondary} style={{ marginTop: 2 }}>
+                    {item.medicamento.dosagem}
+                  </AppText>
                 </View>
                 <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
-                  <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
+                  <AppText variant="caption" color={cfg.color} style={styles.badgeText}>
+                    {cfg.label}
+                  </AppText>
                 </View>
               </View>
 
               <View style={styles.timeRow}>
-                <Ionicons name="time-outline" size={14} color={colors.textMuted} />
-                <Text style={styles.timeText}>
+                <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+                <AppText variant="caption" color={colors.textSecondary}>
                   Previsto: {formatBusinessTime(item.horario_previsto)}
-                </Text>
+                </AppText>
                 {item.horario_confirmacao ? (
-                  <Text style={styles.timeText}>
+                  <AppText variant="caption" color={colors.textSecondary}>
                     {'  '}Confirmado: {formatConfirmationTime(item.horario_confirmacao)}
-                  </Text>
+                  </AppText>
                 ) : null}
               </View>
 
               {canConfirmDose(item.status) && (
                 <TouchableOpacity
-                  style={styles.confirmBtn}
-                  onPress={() => confirmar(item.confirmacao_id)}
-                  disabled={confirming === item.confirmacao_id}
+                  style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    triggerHaptic('light', hapticsEnabled);
+                    confirmar(item.confirmacao_id);
+                  }}
+                  disabled={isConfirming}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${confirmLabelForStatus(item.status)} ${item.medicamento.nome}`}
+                  accessibilityState={{ disabled: isConfirming, busy: isConfirming }}
                 >
-                  {confirming === item.confirmacao_id ? (
+                  {isConfirming ? (
                     <ActivityIndicator color={colors.white} size="small" />
                   ) : (
                     <>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={colors.white} />
-                      <Text style={styles.confirmText}>{confirmLabelForStatus(item.status)}</Text>
+                      <Ionicons name="checkmark-circle-outline" size={22} color={colors.white} />
+                      <AppText variant="bodyStrong" color={colors.white}>
+                        {confirmLabelForStatus(item.status)}
+                      </AppText>
                     </>
                   )}
                 </TouchableOpacity>
               )}
-            </View>
+            </Animated.View>
           );
         }}
       />
@@ -183,29 +210,39 @@ export default function DosesScreen({ navigation, route }: Props) {
         onRequestClose={fecharModal}
       >
         <Pressable style={styles.modalBackdrop} onPress={fecharModal}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <View style={styles.modalIconWrap}>
-              <Ionicons name="checkmark-circle-outline" size={24} color={colors.primary} />
-            </View>
-            <Text style={styles.modalTitle}>Confirmar tomada</Text>
-            {modalDose ? (
-              <>
-                <Text style={styles.modalBody}>
-                  Você tomou {modalDose.medicamento.nome} {modalDose.medicamento.dosagem} das{' '}
-                  {formatBusinessTime(modalDose.horario_previsto)}?
-                </Text>
-                <PrimaryButton
-                  title={confirmLabelForStatus(modalDose.status)}
-                  onPress={() => confirmar(modalDose.confirmacao_id)}
-                  loading={confirming === modalDose.confirmacao_id}
-                  style={styles.modalPrimaryButton}
-                />
-              </>
-            ) : null}
-            <TouchableOpacity style={styles.modalSecondaryButton} onPress={fecharModal}>
-              <Text style={styles.modalSecondaryText}>Agora não</Text>
-            </TouchableOpacity>
-          </Pressable>
+          <Animated.View entering={SlideInDown.duration(280).springify().damping(15)} style={{ width: '100%' }}>
+            <Pressable
+              style={[styles.modalCard, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
+              onPress={() => {}}
+            >
+              <View style={[styles.modalIconWrap, { backgroundColor: colors.primarySoft }]}>
+                <Ionicons name="checkmark-circle-outline" size={26} color={colors.primary} />
+              </View>
+              <AppText variant="title" color={colors.textPrimary}>Confirmar tomada</AppText>
+              {modalDose ? (
+                <>
+                  <AppText variant="body" color={colors.textSecondary} style={{ marginTop: 10, marginBottom: 22 }}>
+                    Você tomou {modalDose.medicamento.nome} {modalDose.medicamento.dosagem} das{' '}
+                    {formatBusinessTime(modalDose.horario_previsto)}?
+                  </AppText>
+                  <PrimaryButton
+                    title={confirmLabelForStatus(modalDose.status)}
+                    onPress={() => confirmar(modalDose.confirmacao_id)}
+                    loading={confirming === modalDose.confirmacao_id}
+                    style={{ marginBottom: 12 }}
+                  />
+                </>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.modalSecondaryButton, { borderColor: colors.border }]}
+                onPress={fecharModal}
+                accessibilityRole="button"
+                accessibilityLabel="Agora não, fechar"
+              >
+                <AppText variant="bodyStrong" color={colors.textSecondary}>Agora não</AppText>
+              </TouchableOpacity>
+            </Pressable>
+          </Animated.View>
         </Pressable>
       </Modal>
     </View>
@@ -213,16 +250,14 @@ export default function DosesScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
+  container: { flex: 1 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 16 },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40, fontSize: 14 },
+  empty: { textAlign: 'center', marginTop: 40 },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
     marginBottom: 12,
-    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07,
     shadowRadius: 8,
@@ -230,33 +265,30 @@ const styles = StyleSheet.create({
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   medInfo: { flex: 1 },
-  medNome: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  medDosagem: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 20,
     marginLeft: 8,
   },
-  badgeText: { fontSize: 11, fontWeight: '700' },
+  badgeText: { fontWeight: '700' },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 10,
-    gap: 4,
+    gap: 6,
+    flexWrap: 'wrap',
   },
-  timeText: { fontSize: 12, color: colors.textMuted },
   confirmBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 10,
+    gap: 8,
+    marginTop: 14,
+    borderRadius: 14,
+    paddingVertical: 14,
+    minHeight: 52,
   },
-  confirmText: { color: colors.white, fontWeight: '700', fontSize: 14 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(10, 15, 18, 0.45)',
@@ -266,10 +298,8 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 24,
-    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 24,
@@ -279,37 +309,16 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 18,
-    backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.textPrimary,
-  },
-  modalBody: {
-    marginTop: 10,
-    marginBottom: 22,
-    fontSize: 15,
-    lineHeight: 22,
-    color: colors.textSecondary,
-  },
-  modalPrimaryButton: {
-    marginBottom: 12,
-  },
   modalSecondaryButton: {
-    height: 50,
+    minHeight: 52,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  modalSecondaryText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.textSecondary,
+    paddingVertical: 14,
   },
 });
