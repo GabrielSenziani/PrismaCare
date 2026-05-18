@@ -51,7 +51,7 @@ O PrismaCare é um sistema acadêmico voltado ao gerenciamento de medicamentos, 
 - CRUD de medicamentos, contatos de segurança e agendamentos
 - Listagem automática de doses do dia com status (`PENDENTE`, `CONFIRMADO`, `ATRASADO`)
 - Confirmação de dose pelo app mobile
-- Monitor automático: doses não confirmadas em 30 min geram notificação para os contatos
+- Monitor automático: doses não confirmadas em 5 min geram notificação para os contatos
 - Anti-duplicata de notificações por índice único + verificação na aplicação
 - Rate limiting por IP e por usuário (login, refresh e API geral)
 - Bloqueio progressivo de login após falhas consecutivas
@@ -199,7 +199,7 @@ Usuário cria conta
        ↓
    Usuário confirma dose → status vira CONFIRMADO
        ↓
-   Se não confirmada em 30 min → APScheduler marca como ATRASADO
+   Se não confirmada em 5 min → APScheduler marca como NAO_CONFIRMADO e dispara a notificação
        ↓
    Notificação gerada para contatos de segurança do usuário
 ```
@@ -212,6 +212,10 @@ Usuário cria conta
 |---|---|---|---|
 | **Auth** | POST | `/api/auth/login` | Login com email e senha |
 | | POST | `/api/auth/google` | Login com Google via `id_token` validado no backend |
+| | POST | `/api/auth/lookup-phone` | Validação mínima do telefone para fluxo WhatsApp |
+| | POST | `/api/auth/send-phone-code` | Envia código OTP via WhatsApp |
+| | POST | `/api/auth/verify-phone-code` | Valida OTP e autentica ou libera cadastro por telefone |
+| | POST | `/api/auth/complete-phone-registration` | Conclui cadastro novo com `verification_token` |
 | | POST | `/api/auth/refresh` | Renovar access token |
 | | POST | `/api/auth/logout` | Revogar sessão atual |
 | | POST | `/api/auth/logout-all` | Revogar todas as sessões |
@@ -243,6 +247,7 @@ Documentação interativa disponível em `/docs` (Swagger UI) após subir o back
 - **bcrypt**: hash de senha com custo padrão
 - **Refresh token**: armazenado como SHA-256 no banco; revogação individual e total
 - **Rate limiting**: 10 req/min no login, 20/min no refresh, 120/min na API geral
+- **Telefone/OTP**: envio de código com resposta neutra, limite próprio por telefone/IP e conclusão de cadastro novo com `verification_token`
 - **Login lockout**: bloqueio progressivo após 5 falhas (configurável, máx. 60 min)
 - **Headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cache-Control: no-store` em rotas de auth
 - **Isolamento**: todos os dados filtrados pelo `user_id` extraído do JWT
@@ -275,6 +280,8 @@ LOGIN_LOCKOUT_MAX_MINUTES=60
 RATE_LIMIT_LOGIN_PER_MIN=10
 RATE_LIMIT_REFRESH_PER_MIN=20
 RATE_LIMIT_API_PER_MIN=120
+RATE_LIMIT_PHONE_SEND_PER_MIN=3
+RATE_LIMIT_PHONE_VERIFY_PER_MIN=10
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id.apps.googleusercontent.com
 ```
 
@@ -291,6 +298,7 @@ Em VPS/produção, mantenha `ENABLE_MANUAL_MONITOR_ENDPOINT=false`. Essa flag bl
 
 - `WHATSAPP_PROVIDER=simulation` mantém o envio simulado para desenvolvimento e testes.
 - `WHATSAPP_PROVIDER=evolution` ativa o envio real via Evolution API.
+- O login por telefone envia um código de 6 dígitos pelo WhatsApp, válido por 5 minutos.
 - `GET /api/whatsapp/status` exige autenticação e nunca expõe `EVOLUTION_API_KEY`.
 - `POST /api/whatsapp/test-send` exige autenticação e só funciona com `ENABLE_WHATSAPP_TEST_ENDPOINT=true`.
 
@@ -363,7 +371,7 @@ Certifique-se de que o backend esteja acessível e defina `EXPO_PUBLIC_API_BASE_
 
 - O banco `prismacare.db` é criado automaticamente na primeira execução — não commitar.
 - O APScheduler inicia junto com o servidor e varre doses atrasadas a cada 5 minutos.
-- A integração real com WhatsApp ainda não está implementada; notificações são criadas com status `AGUARDANDO`.
+- A integração real via Evolution API pode ser usada para notificações e para envio do OTP de login por telefone.
 - Recuperação de senha está em desenvolvimento.
 
 ---

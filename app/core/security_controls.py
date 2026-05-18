@@ -50,6 +50,38 @@ def enforce_refresh_rate_limit(request: Request, user_id: int | None = None) -> 
         )
 
 
+def enforce_phone_code_send_rate_limit(request: Request, phone_e164: str) -> None:
+    ip = client_ip(request)
+    rate_limiter.enforce(
+        key=f"phone-send:ip:{ip}",
+        limit=settings.rate_limit_phone_send_per_min,
+        window_seconds=60,
+        event="phone_code_send",
+    )
+    rate_limiter.enforce(
+        key=f"phone-send:phone:{phone_e164}",
+        limit=settings.rate_limit_phone_send_per_min,
+        window_seconds=60,
+        event="phone_code_send",
+    )
+
+
+def enforce_phone_code_verify_rate_limit(request: Request, phone_e164: str) -> None:
+    ip = client_ip(request)
+    rate_limiter.enforce(
+        key=f"phone-verify:ip:{ip}",
+        limit=settings.rate_limit_phone_verify_per_min,
+        window_seconds=60,
+        event="phone_code_verify",
+    )
+    rate_limiter.enforce(
+        key=f"phone-verify:phone:{phone_e164}",
+        limit=settings.rate_limit_phone_verify_per_min,
+        window_seconds=60,
+        event="phone_code_verify",
+    )
+
+
 def enforce_api_rate_limit(request: Request, user_id: int | None = None) -> None:
     ip = client_ip(request)
     rate_limiter.enforce(

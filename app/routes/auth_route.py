@@ -1,24 +1,42 @@
 import sqlite3
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.core.audit import audit_event
 from app.core.config import settings
+from app.core.phone_auth import (
+    PHONE_CODE_MAX_ATTEMPTS,
+    PHONE_CODE_TTL_SECONDS,
+    build_phone_code_message,
+    format_phone_display,
+    generate_phone_code,
+    normalize_phone_br_auth,
+)
 from app.core.security_controls import (
     client_ip,
     enforce_login_rate_limit,
+    enforce_phone_code_send_rate_limit,
+    enforce_phone_code_verify_rate_limit,
     enforce_refresh_rate_limit,
     user_agent,
 )
 from app.database import get_db
 from app.repositories import auth_repo, user_repo
-from app.security import extrair_payload, gerar_par_tokens, hash_senha, hash_token, verificar_senha
+from app.security import (
+    extrair_payload,
+    gerar_par_tokens,
+    gerar_phone_verification_token,
+    hash_senha,
+    hash_token,
+    verificar_senha,
+)
+from app.services.whatsapp_service import enviar_whatsapp
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -45,6 +63,40 @@ class GoogleLoginRequest(BaseModel):
     id_token: str
 
 
+class PhoneLookupRequest(BaseModel):
+    ddd: str
+    numero: str
+
+
+class PhoneCodeVerifyRequest(BaseModel):
+    ddd: str
+    numero: str
+    codigo: str
+
+    @field_validator("codigo")
+    @classmethod
+    def codigo_valido(cls, value: str) -> str:
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if len(digits) != 6:
+            raise ValueError("Código inválido")
+        return digits
+
+
+class CompletePhoneRegistrationRequest(BaseModel):
+    verification_token: str
+    nome: str
+
+    @field_validator("nome")
+    @classmethod
+    def nome_valido(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 2:
+            raise ValueError("Nome deve ter pelo menos 2 caracteres")
+        if len(normalized) > 60:
+            raise ValueError("Nome deve ter no máximo 60 caracteres")
+        return normalized
+
+
 def _auth_response(user: dict, access_token: str, refresh_token: str) -> dict:
     return {
         "access_token": access_token,
@@ -64,6 +116,45 @@ def _normalize_email(email: str) -> str:
     if "@" not in value or "." not in value:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="E-mail inválido")
     return value
+
+
+def _normalize_phone_payload(ddd: str, numero: str) -> tuple[str, str]:
+    try:
+        return normalize_phone_br_auth(ddd, numero)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+def _criar_sessao_auth(
+    conn: sqlite3.Connection,
+    request: Request,
+    user: dict,
+    event: str,
+) -> dict:
+    ip = client_ip(request)
+    ua = user_agent(request)
+    access_token, refresh_token, session_id = gerar_par_tokens(user["id"], user.get("email"))
+    refresh_payload = extrair_payload(refresh_token, expected_type="refresh")
+    auth_repo.criar_refresh_token(
+        conn,
+        user_id=user["id"],
+        session_id=session_id,
+        token_hash=hash_token(refresh_token),
+        expires_at=datetime.fromtimestamp(refresh_payload["exp"], timezone.utc).isoformat(),
+        ip=ip,
+        user_agent=ua,
+    )
+    auth_repo.registrar_evento_auth(
+        conn,
+        event=event,
+        success=True,
+        user_id=user["id"],
+        email=user.get("email"),
+        ip=ip,
+        user_agent=ua,
+    )
+    audit_event(event, user_id=user["id"], ip=ip)
+    return _auth_response(user, access_token, refresh_token)
 
 
 def process_login(
@@ -97,7 +188,7 @@ def process_login(
         )
 
     user = user_repo.buscar_usuario_por_email(conn, email)
-    if not user or not verificar_senha(password, user["senha"]):
+    if not user or not user.get("senha") or not verificar_senha(password, user["senha"]):
         lock = auth_repo.registrar_falha_login(
             conn,
             email=email,
@@ -121,28 +212,7 @@ def process_login(
 
     auth_repo.resetar_falhas_login(conn, email=email, ip=ip)
 
-    access_token, refresh_token, session_id = gerar_par_tokens(user["id"], user["email"])
-    refresh_payload = extrair_payload(refresh_token, expected_type="refresh")
-    auth_repo.criar_refresh_token(
-        conn,
-        user_id=user["id"],
-        session_id=session_id,
-        token_hash=hash_token(refresh_token),
-        expires_at=datetime.fromtimestamp(refresh_payload["exp"], timezone.utc).isoformat(),
-        ip=ip,
-        user_agent=ua,
-    )
-    auth_repo.registrar_evento_auth(
-        conn,
-        event="login_success",
-        success=True,
-        user_id=user["id"],
-        email=user["email"],
-        ip=ip,
-        user_agent=ua,
-    )
-    audit_event("login_success", user_id=user["id"], ip=ip)
-    return _auth_response(user, access_token, refresh_token)
+    return _criar_sessao_auth(conn, request, user, "login_success")
 
 
 def process_google_login(
@@ -258,34 +328,182 @@ def process_google_login(
                 avatar_url=avatar_url if isinstance(avatar_url, str) else None,
             )
 
-    access_token, refresh_token, session_id = gerar_par_tokens(user["id"], user["email"])
-    refresh_payload = extrair_payload(refresh_token, expected_type="refresh")
-    auth_repo.criar_refresh_token(
-        conn,
-        user_id=user["id"],
-        session_id=session_id,
-        token_hash=hash_token(refresh_token),
-        expires_at=datetime.fromtimestamp(refresh_payload["exp"], timezone.utc).isoformat(),
-        ip=ip,
-        user_agent=ua,
-    )
-    auth_repo.registrar_evento_auth(
-        conn,
-        event="google_login_success",
-        success=True,
-        user_id=user["id"],
-        email=user["email"],
-        ip=ip,
-        user_agent=ua,
-    )
-    audit_event("google_login_success", user_id=user["id"], ip=ip)
-    return _auth_response(user, access_token, refresh_token)
+    return _criar_sessao_auth(conn, request, user, "google_login_success")
 
 
 @router.post("/lookup-email")
 def lookup_email(payload: LookupEmailRequest, conn: sqlite3.Connection = Depends(get_db)):
     email = _normalize_email(payload.email)
     return {"exists": user_repo.buscar_usuario_por_email(conn, email) is not None}
+
+
+@router.post("/lookup-phone")
+def lookup_phone(payload: PhoneLookupRequest):
+    _, formatted_phone = _normalize_phone_payload(payload.ddd, payload.numero)
+    return {
+        "ok": True,
+        "formatted_phone": formatted_phone,
+        "channel": "whatsapp",
+    }
+
+
+@router.post("/send-phone-code")
+def send_phone_code(
+    request: Request,
+    payload: PhoneLookupRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    phone_e164, formatted_phone = _normalize_phone_payload(payload.ddd, payload.numero)
+    enforce_phone_code_send_rate_limit(request, phone_e164)
+
+    auth_repo.registrar_evento_auth(
+        conn,
+        event="phone_code_requested",
+        success=True,
+        user_id=None,
+        email=None,
+        ip=client_ip(request),
+        user_agent=user_agent(request),
+        reason=f"phone={phone_e164}",
+    )
+
+    auth_repo.invalidar_codigos_telefone_ativos(conn, phone_e164)
+    code = generate_phone_code()
+    expires_at = (datetime.now(timezone.utc) + timedelta(seconds=PHONE_CODE_TTL_SECONDS)).isoformat()
+    code_entry = auth_repo.criar_codigo_telefone(
+        conn,
+        phone_e164=phone_e164,
+        code_hash=hash_token(code),
+        expires_at=expires_at,
+    )
+
+    message = build_phone_code_message(code)
+    send_result = enviar_whatsapp(phone_e164, message)
+    if send_result["status_envio"] != "ENVIADO":
+        auth_repo.invalidar_codigo_telefone(conn, code_entry["id"])
+        auth_repo.registrar_evento_auth(
+            conn,
+            event="phone_code_sent",
+            success=False,
+            user_id=None,
+            email=None,
+            ip=client_ip(request),
+            user_agent=user_agent(request),
+            reason=send_result.get("error") or "send_failed",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Não foi possível enviar seu código pelo WhatsApp agora. Tente novamente em instantes.",
+        )
+
+    auth_repo.registrar_evento_auth(
+        conn,
+        event="phone_code_sent",
+        success=True,
+        user_id=None,
+        email=None,
+        ip=client_ip(request),
+        user_agent=user_agent(request),
+        reason=f"phone={phone_e164}",
+    )
+    return {
+        "ok": True,
+        "formatted_phone": formatted_phone,
+        "expires_in_seconds": PHONE_CODE_TTL_SECONDS,
+    }
+
+
+@router.post("/verify-phone-code")
+def verify_phone_code(
+    request: Request,
+    payload: PhoneCodeVerifyRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    phone_e164, formatted_phone = _normalize_phone_payload(payload.ddd, payload.numero)
+    enforce_phone_code_verify_rate_limit(request, phone_e164)
+
+    current_code = auth_repo.buscar_codigo_telefone_ativo(conn, phone_e164)
+    if not current_code:
+        auth_repo.registrar_evento_auth(
+            conn,
+            event="phone_code_failed",
+            success=False,
+            user_id=None,
+            email=None,
+            ip=client_ip(request),
+            user_agent=user_agent(request),
+            reason="missing_or_expired_code",
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Código inválido ou expirado")
+
+    if current_code["code_hash"] != hash_token(payload.codigo):
+        updated = auth_repo.registrar_falha_codigo_telefone(
+            conn,
+            current_code["id"],
+            max_attempts=PHONE_CODE_MAX_ATTEMPTS,
+        )
+        auth_repo.registrar_evento_auth(
+            conn,
+            event="phone_code_failed",
+            success=False,
+            user_id=None,
+            email=None,
+            ip=client_ip(request),
+            user_agent=user_agent(request),
+            reason=f"invalid_code_attempts={updated['failed_attempts'] if updated else 0}",
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Código inválido ou expirado")
+
+    auth_repo.consumir_codigo_telefone(conn, current_code["id"])
+    user = user_repo.buscar_usuario_por_phone_e164(conn, phone_e164)
+    if user:
+        if not user.get("phone_verified_at"):
+            user = user_repo.marcar_telefone_verificado(
+                conn,
+                user["id"],
+                telefone=formatted_phone,
+                phone_e164=phone_e164,
+                verified_at=datetime.now(timezone.utc).isoformat(),
+            ) or user
+        return _criar_sessao_auth(conn, request, user, "phone_login_success")
+
+    verification_token = gerar_phone_verification_token(phone_e164)
+    return {
+        "authenticated": False,
+        "needs_name": True,
+        "verification_token": verification_token,
+        "formatted_phone": formatted_phone,
+    }
+
+
+@router.post("/complete-phone-registration")
+def complete_phone_registration(
+    request: Request,
+    payload: CompletePhoneRegistrationRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    decoded = extrair_payload(payload.verification_token, expected_type="phone_verification")
+    phone_e164 = decoded.get("phone_e164")
+    if not isinstance(phone_e164, str) or not phone_e164.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token de verificação inválido")
+
+    if user_repo.buscar_usuario_por_phone_e164(conn, phone_e164):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Este telefone já está vinculado a uma conta")
+
+    formatted_phone = format_phone_display(phone_e164)
+    verified_at = datetime.now(timezone.utc).isoformat()
+    user = user_repo.criar_usuario(
+        conn,
+        nome=payload.nome,
+        telefone=formatted_phone,
+        email=None,
+        senha=None,
+        data_nascimento=None,
+        auth_provider="phone",
+        phone_e164=phone_e164,
+        phone_verified_at=verified_at,
+    )
+    return _criar_sessao_auth(conn, request, user, "phone_register_success")
 
 
 @router.post("/register", status_code=201)

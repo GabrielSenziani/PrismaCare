@@ -23,6 +23,8 @@ class Settings:
     rate_limit_login_per_min: int
     rate_limit_refresh_per_min: int
     rate_limit_api_per_min: int
+    rate_limit_phone_send_per_min: int
+    rate_limit_phone_verify_per_min: int
     disable_scheduler: bool
 
 
@@ -115,6 +117,8 @@ def load_settings() -> Settings:
         rate_limit_login_per_min=_get_int("RATE_LIMIT_LOGIN_PER_MIN", 10),
         rate_limit_refresh_per_min=_get_int("RATE_LIMIT_REFRESH_PER_MIN", 20),
         rate_limit_api_per_min=_get_int("RATE_LIMIT_API_PER_MIN", 120),
+        rate_limit_phone_send_per_min=_get_int("RATE_LIMIT_PHONE_SEND_PER_MIN", 3),
+        rate_limit_phone_verify_per_min=_get_int("RATE_LIMIT_PHONE_VERIFY_PER_MIN", 10),
         disable_scheduler=_get_bool("DISABLE_SCHEDULER", False),
     )
 

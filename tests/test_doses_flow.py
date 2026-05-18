@@ -144,8 +144,8 @@ def test_dose_pendente_dentro_prazo_nao_alterada(client, headers_a):
 
     _med_id, _contato_id, agend_id = _criar_stack(client, headers_a)
 
-    # Horário futuro — dentro do prazo, não deve ser marcada
-    prevista = (datetime.now(FUSO) + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    # Horário de 4 minutos atrás — ainda dentro da tolerância de 5 minutos.
+    prevista = (datetime.now(FUSO) - timedelta(minutes=4)).strftime("%Y-%m-%d %H:%M:%S")
     payload = {
         "id_agendamento": agend_id,
         "data_hora_prevista": prevista,
@@ -158,3 +158,27 @@ def test_dose_pendente_dentro_prazo_nao_alterada(client, headers_a):
 
     r2 = client.get(f"/api/confirmacoes/{confirmacao_id}", headers=headers_a)
     assert r2.json()["status"] == "PENDENTE"
+
+
+def test_dose_pendente_fora_da_tolerancia_de_cinco_minutos_gera_alerta(client, headers_a):
+    """Confirma explicitamente a nova regra de 5 minutos."""
+    from app.services.monitor_service import varrer_e_notificar
+
+    _med_id, _contato_id, agend_id = _criar_stack(client, headers_a)
+
+    prevista = (datetime.now(FUSO) - timedelta(minutes=6)).strftime("%Y-%m-%d %H:%M:%S")
+    payload = {
+        "id_agendamento": agend_id,
+        "data_hora_prevista": prevista,
+        "status": "PENDENTE",
+    }
+    r = client.post("/api/confirmacoes", json=payload, headers=headers_a)
+    confirmacao_id = r.json()["id"]
+
+    resultado = varrer_e_notificar()
+
+    assert resultado["confirmacoes_atualizadas"] >= 1
+    assert resultado["notificacoes_criadas"] >= 1
+
+    r2 = client.get(f"/api/confirmacoes/{confirmacao_id}", headers=headers_a)
+    assert r2.json()["status"] == "NAO_CONFIRMADO"

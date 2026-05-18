@@ -49,10 +49,11 @@ class UserResponse(BaseModel):
     id: int
     nome: Optional[str] = None
     telefone: Optional[str] = None
-    email: str
+    email: Optional[str] = None
     data_nascimento: Optional[date] = None
     timezone: str = "America/Sao_Paulo"
     timezone_confirmed: bool = False
+    phone_verified_at: Optional[str] = None
 
 
 class UserProfileUpdate(BaseModel):

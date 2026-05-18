@@ -22,6 +22,7 @@ export default function MedicamentosScreen() {
   const [showForm, setShowForm] = useState(false);
   const [editando, setEditando] = useState<Medicamento | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [nome, setNome] = useState('');
   const [dosagem, setDosagem] = useState('');
   const [observacao, setObservacao] = useState('');
@@ -80,6 +81,36 @@ export default function MedicamentosScreen() {
     }
   }
 
+  function confirmarExclusao(medicamento: Medicamento) {
+    Alert.alert(
+      'Excluir medicamento',
+      `Deseja remover ${medicamento.nome}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => excluir(medicamento.id),
+        },
+      ],
+    );
+  }
+
+  async function excluir(medicamentoId: number) {
+    setDeletingId(medicamentoId);
+    try {
+      await api(`/api/medicamentos/${medicamentoId}`, { method: 'DELETE' });
+      if (editando?.id === medicamentoId) {
+        fecharForm();
+      }
+      await buscar();
+    } catch (e: any) {
+      Alert.alert('Erro', e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (loading) return <ActivityIndicator style={styles.center} color={colors.primary} size="large" />;
 
   return (
@@ -99,9 +130,22 @@ export default function MedicamentosScreen() {
               <Text style={styles.cardSub}>{item.dosagem}</Text>
               {item.observacao ? <Text style={styles.cardMuted}>{item.observacao}</Text> : null}
             </View>
-            <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
-              <Ionicons name="pencil-outline" size={18} color={colors.primary} />
-            </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
+                <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => confirmarExclusao(item)}
+                disabled={deletingId === item.id}
+              >
+                {deletingId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.error} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
         ListFooterComponent={
@@ -161,10 +205,16 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   cardMuted: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: 8 },
   editBtn: {
     padding: 8,
     borderRadius: 10,
     backgroundColor: colors.primarySoft,
+  },
+  deleteBtn: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: colors.errorBg,
   },
   form: {
     backgroundColor: colors.surface,

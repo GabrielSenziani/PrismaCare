@@ -5,6 +5,7 @@ import sqlite3
 os.environ.setdefault("DISABLE_SCHEDULER", "true")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-pytest-only")
 os.environ.setdefault("GOOGLE_WEB_CLIENT_ID", "test-google-web-client-id.apps.googleusercontent.com")
+os.environ.setdefault("WHATSAPP_PROVIDER", "simulation")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
@@ -21,33 +22,67 @@ import { colors } from '../theme/colors';
 import InputField from '../components/InputField';
 import PrimaryButton from '../components/PrimaryButton';
 import { AuthContext } from '../contexts/AuthContext';
-import { lookupEmail, registerRequest } from '../services/api';
+import {
+  completePhoneRegistrationRequest,
+  lookupEmail,
+  lookupPhoneRequest,
+  registerRequest,
+  sendPhoneCodeRequest,
+  verifyPhoneCodeRequest,
+} from '../services/api';
 import { RootStackParamList } from '../../App';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'AuthEntry'>;
 };
 
-type Step = 'email' | 'existingPassword' | 'newPassword';
+type Step = 'contact' | 'existingPassword' | 'newPassword' | 'phoneDetails' | 'phoneCode' | 'phoneName';
 
 function validateEmail(email: string): boolean {
   return /\S+@\S+\.\S+/.test(email.trim());
 }
 
-function isPhoneCandidate(value: string): boolean {
-  return value.replace(/\D/g, '').length >= 8;
+function looksLikePhone(value: string): boolean {
+  return value.replace(/\D/g, '').length >= 8 && !value.includes('@');
+}
+
+function splitPhoneCandidate(value: string): { ddd: string; numero: string } | null {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+  if (digits.length !== 10 && digits.length !== 11) return null;
+  return { ddd: digits.slice(0, 2), numero: digits.slice(2) };
+}
+
+function formatPhonePreview(ddd: string, numero: string): string {
+  const cleanDdd = ddd.replace(/\D/g, '').slice(0, 2);
+  const cleanNumero = numero.replace(/\D/g, '').slice(0, 9);
+  if (!cleanDdd && !cleanNumero) return '+55';
+  if (cleanNumero.length > 4) {
+    const head = cleanNumero.length === 9 ? cleanNumero.slice(0, 5) : cleanNumero.slice(0, 4);
+    const tail = cleanNumero.length === 9 ? cleanNumero.slice(5) : cleanNumero.slice(4);
+    return `+55 ${cleanDdd}${cleanDdd ? ' ' : ''}${head}${tail ? `-${tail}` : ''}`.trim();
+  }
+  return `+55 ${cleanDdd}${cleanDdd ? ' ' : ''}${cleanNumero}`.trim();
 }
 
 export default function AuthEntryScreen({ navigation }: Props) {
-  const { signIn, signInWithGoogle } = useContext(AuthContext);
-  const [step, setStep] = useState<Step>('email');
-  const [email, setEmail] = useState('');
+  const { signIn, signInWithGoogle, hydrateSession } = useContext(AuthContext);
+  const [step, setStep] = useState<Step>('contact');
+  const [contact, setContact] = useState('');
   const [password, setPassword] = useState('');
+  const [ddd, setDdd] = useState('');
+  const [numero, setNumero] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [nome, setNome] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
+  const [formattedPhone, setFormattedPhone] = useState('+55');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = contact.trim().toLowerCase();
   const isExisting = step === 'existingPassword';
   const isNew = step === 'newPassword';
   const entrance = useRef(new Animated.Value(0)).current;
@@ -93,13 +128,25 @@ export default function AuthEntryScreen({ navigation }: Props) {
     }).start();
   }, [step, stepProgress]);
 
-  async function handleEmail() {
-    if (isPhoneCandidate(email)) {
-      setError('Login com número será habilitado em breve. Por enquanto, entre com seu e-mail e senha.');
+  async function handleContact() {
+    if (looksLikePhone(contact)) {
+      const phoneParts = splitPhoneCandidate(contact);
+      if (!phoneParts) {
+        setError('Informe um telefone brasileiro válido.');
+        return;
+      }
+      setDdd(phoneParts.ddd);
+      setNumero(phoneParts.numero);
+      setFormattedPhone(formatPhonePreview(phoneParts.ddd, phoneParts.numero));
+      setCodigo('');
+      setNome('');
+      setVerificationToken('');
+      setError(undefined);
+      setStep('phoneDetails');
       return;
     }
 
-    if (!validateEmail(email)) {
+    if (!validateEmail(contact)) {
       setError('Informe um número ou e-mail válido.');
       return;
     }
@@ -137,6 +184,71 @@ export default function AuthEntryScreen({ navigation }: Props) {
     }
   }
 
+  async function handleSendPhoneCode() {
+    if (ddd.replace(/\D/g, '').length !== 2 || numero.replace(/\D/g, '').length < 8) {
+      setError('Informe um DDD e número válidos.');
+      return;
+    }
+
+    setLoading(true);
+    setError(undefined);
+    try {
+      const lookup = await lookupPhoneRequest(ddd, numero);
+      const sent = await sendPhoneCodeRequest(ddd, numero);
+      setFormattedPhone(sent.formatted_phone ?? lookup.formatted_phone);
+      setCodigo('');
+      setStep('phoneCode');
+    } catch (e: any) {
+      Alert.alert('Não foi possível enviar o código', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyPhoneCode() {
+    const codeDigits = codigo.replace(/\D/g, '');
+    if (codeDigits.length !== 6) {
+      setError('Digite o código de 6 dígitos.');
+      return;
+    }
+
+    setLoading(true);
+    setError(undefined);
+    try {
+      const result = await verifyPhoneCodeRequest(ddd, numero, codeDigits);
+      if ('access_token' in result) {
+        await hydrateSession(result);
+        return;
+      }
+      setVerificationToken(result.verification_token);
+      setFormattedPhone(result.formatted_phone);
+      setNome('');
+      setStep('phoneName');
+    } catch (e: any) {
+      Alert.alert('Código inválido', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleCompletePhoneRegistration() {
+    if (nome.trim().length < 2) {
+      setError('Informe como você quer ser chamado.');
+      return;
+    }
+
+    setLoading(true);
+    setError(undefined);
+    try {
+      const payload = await completePhoneRegistrationRequest(verificationToken, nome.trim());
+      await hydrateSession(payload);
+    } catch (e: any) {
+      Alert.alert('Não foi possível concluir seu cadastro', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
     setError(undefined);
@@ -150,21 +262,53 @@ export default function AuthEntryScreen({ navigation }: Props) {
     }
   }
 
-  function goBackToEmail() {
-    setStep('email');
-    setPassword('');
+  function goBack() {
     setError(undefined);
+    if (step === 'existingPassword' || step === 'newPassword' || step === 'phoneDetails') {
+      setStep('contact');
+      return;
+    }
+    if (step === 'phoneCode') {
+      setStep('phoneDetails');
+      return;
+    }
+    if (step === 'phoneName') {
+      setStep('phoneCode');
+    }
   }
 
-  const title = step === 'email'
-    ? 'Inicie com seu número ou e-mail'
-    : isExisting
-      ? 'Bem-vindo de volta!'
-      : 'Crie uma senha';
+  const title = (() => {
+    switch (step) {
+      case 'existingPassword':
+        return 'Bem-vindo de volta!';
+      case 'newPassword':
+        return 'Crie uma senha';
+      case 'phoneDetails':
+        return 'Confirme seu telefone';
+      case 'phoneCode':
+        return 'Digite o código';
+      case 'phoneName':
+        return 'Como quer ser chamado?';
+      default:
+        return 'Inicie com seu número ou e-mail';
+    }
+  })();
 
-  const subtitle = step === 'email'
-    ? 'Use seu e-mail para entrar hoje. O acesso por número será liberado em breve.'
-    : normalizedEmail;
+  const subtitle = (() => {
+    switch (step) {
+      case 'existingPassword':
+      case 'newPassword':
+        return normalizedEmail;
+      case 'phoneDetails':
+        return 'Enviaremos um código de 6 dígitos para este número pelo WhatsApp.';
+      case 'phoneCode':
+        return `Código enviado para ${formattedPhone} pelo WhatsApp.`;
+      case 'phoneName':
+        return `Vamos finalizar sua conta com o número ${formattedPhone}.`;
+      default:
+        return 'Entre com e-mail e senha ou receba um código de 6 dígitos pelo WhatsApp.';
+    }
+  })();
 
   const entranceStyle = {
     opacity: entrance,
@@ -234,10 +378,10 @@ export default function AuthEntryScreen({ navigation }: Props) {
             </Animated.View>
 
             <Animated.View style={[styles.card, entranceStyle]}>
-              {step !== 'email' && (
-                <TouchableOpacity style={styles.backButton} onPress={goBackToEmail}>
+              {step !== 'contact' && (
+                <TouchableOpacity style={styles.backButton} onPress={goBack}>
                   <Ionicons name="arrow-back" size={18} color={colors.primary} />
-                  <Text style={styles.backText}>Trocar e-mail</Text>
+                  <Text style={styles.backText}>Voltar</Text>
                 </TouchableOpacity>
               )}
 
@@ -245,14 +389,14 @@ export default function AuthEntryScreen({ navigation }: Props) {
                 <Text style={styles.title}>{title}</Text>
                 {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
 
-                {step === 'email' ? (
+                {step === 'contact' ? (
                   <InputField
                     label="Número ou e-mail"
                     iconName="person-outline"
                     placeholder="Seu número ou e-mail"
-                    value={email}
+                    value={contact}
                     onChangeText={(value) => {
-                      setEmail(value);
+                      setContact(value);
                       setError(undefined);
                     }}
                     keyboardType="default"
@@ -260,7 +404,9 @@ export default function AuthEntryScreen({ navigation }: Props) {
                     autoCorrect={false}
                     error={error}
                   />
-                ) : (
+                ) : null}
+
+                {(step === 'existingPassword' || step === 'newPassword') ? (
                   <>
                     <InputField
                       label="Senha"
@@ -283,17 +429,125 @@ export default function AuthEntryScreen({ navigation }: Props) {
                       </TouchableOpacity>
                     )}
                   </>
-                )}
+                ) : null}
+
+                {step === 'phoneDetails' ? (
+                  <>
+                    <View style={styles.phoneRow}>
+                      <View style={styles.phoneCountry}>
+                        <Text style={styles.phoneCountryText}>+55</Text>
+                      </View>
+                      <View style={styles.phoneField}>
+                        <Text style={styles.phoneLabel}>DDD</Text>
+                        <TextInput
+                          style={styles.phoneInput}
+                          value={ddd}
+                          onChangeText={(value) => {
+                            setDdd(value.replace(/\D/g, '').slice(0, 2));
+                            setError(undefined);
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="11"
+                          placeholderTextColor={colors.textMuted}
+                          maxLength={2}
+                        />
+                      </View>
+                      <View style={[styles.phoneField, styles.phoneNumberField]}>
+                        <Text style={styles.phoneLabel}>Número</Text>
+                        <TextInput
+                          style={styles.phoneInput}
+                          value={numero}
+                          onChangeText={(value) => {
+                            setNumero(value.replace(/\D/g, '').slice(0, 9));
+                            setError(undefined);
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="954154792"
+                          placeholderTextColor={colors.textMuted}
+                          maxLength={9}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.phonePreview}>
+                      <Ionicons name="logo-whatsapp" size={16} color={colors.primary} />
+                      <Text style={styles.phonePreviewText}>{formatPhonePreview(ddd, numero)}</Text>
+                    </View>
+                    {error ? <Text style={styles.inlineError}>{error}</Text> : null}
+                  </>
+                ) : null}
+
+                {step === 'phoneCode' ? (
+                  <>
+                    <InputField
+                      label="Código de 6 dígitos"
+                      iconName="chatbubble-ellipses-outline"
+                      placeholder="123456"
+                      value={codigo}
+                      onChangeText={(value) => {
+                        setCodigo(value.replace(/\D/g, '').slice(0, 6));
+                        setError(undefined);
+                      }}
+                      keyboardType="number-pad"
+                      error={error}
+                    />
+                    <TouchableOpacity style={styles.secondaryAction} onPress={handleSendPhoneCode}>
+                      <Text style={styles.secondaryActionText}>Reenviar código pelo WhatsApp</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
+
+                {step === 'phoneName' ? (
+                  <InputField
+                    label="Nome"
+                    iconName="sparkles-outline"
+                    placeholder="Como você quer ser chamado?"
+                    value={nome}
+                    onChangeText={(value) => {
+                      setNome(value);
+                      setError(undefined);
+                    }}
+                    autoCapitalize="words"
+                    error={error}
+                  />
+                ) : null}
 
                 <PrimaryButton
-                  title={step === 'email' ? 'Continuar' : isExisting ? 'Entrar' : 'Criar conta'}
-                  onPress={step === 'email' ? handleEmail : handlePassword}
+                  title={
+                    step === 'contact'
+                      ? 'Continuar'
+                      : step === 'existingPassword'
+                        ? 'Entrar'
+                        : step === 'newPassword'
+                          ? 'Criar conta'
+                          : step === 'phoneDetails'
+                            ? 'Receber código'
+                            : step === 'phoneCode'
+                              ? 'Validar código'
+                              : 'Concluir cadastro'
+                  }
+                  onPress={
+                    step === 'contact'
+                      ? handleContact
+                      : step === 'existingPassword' || step === 'newPassword'
+                        ? handlePassword
+                        : step === 'phoneDetails'
+                          ? handleSendPhoneCode
+                          : step === 'phoneCode'
+                            ? handleVerifyPhoneCode
+                            : handleCompletePhoneRegistration
+                  }
                   loading={loading}
-                  iconName={step === 'email' ? 'arrow-forward' : 'checkmark'}
+                  iconName={
+                    step === 'contact' || step === 'phoneDetails'
+                      ? 'arrow-forward'
+                      : step === 'phoneCode'
+                        ? 'checkmark'
+                        : 'sparkles'
+                  }
                   style={styles.primaryButton}
                 />
 
-                {step === 'email' ? (
+                {step === 'contact' ? (
                   <>
                     <View style={styles.dividerRow}>
                       <View style={styles.dividerLine} />
@@ -448,6 +702,84 @@ const styles = StyleSheet.create({
   socialText: {
     fontSize: 14,
     color: colors.textSecondary,
+    fontWeight: '700',
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+    marginBottom: 12,
+  },
+  phoneCountry: {
+    minWidth: 64,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  phoneCountryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.primaryDeep,
+  },
+  phoneField: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  phoneNumberField: {
+    flex: 2,
+  },
+  phoneLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    letterSpacing: 0.4,
+  },
+  phoneInput: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    paddingVertical: 4,
+  },
+  phonePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: colors.primarySoft,
+    marginBottom: 18,
+  },
+  phonePreviewText: {
+    color: colors.primaryDeep,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  inlineError: {
+    fontSize: 12,
+    color: colors.error,
+    fontWeight: '600',
+    marginTop: -6,
+    marginBottom: 12,
+  },
+  secondaryAction: {
+    alignSelf: 'flex-end',
+    marginTop: -4,
+    marginBottom: 18,
+  },
+  secondaryActionText: {
+    color: colors.primary,
     fontWeight: '700',
   },
 });

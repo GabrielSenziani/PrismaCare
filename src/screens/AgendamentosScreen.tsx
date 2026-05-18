@@ -51,6 +51,7 @@ export default function AgendamentosScreen() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [editando, setEditando] = useState<Agendamento | null>(null);
   const [medSelecionado, setMedSelecionado] = useState<Medicamento | null>(null);
   const [horario, setHorario] = useState('');
@@ -138,6 +139,36 @@ export default function AgendamentosScreen() {
     }
   }
 
+  function confirmarExclusao(agendamento: Agendamento) {
+    Alert.alert(
+      'Excluir agendamento',
+      `Deseja remover o agendamento de ${nomeMedicamento(agendamento.id_medicamento)}?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir',
+          style: 'destructive',
+          onPress: () => excluir(agendamento.id),
+        },
+      ],
+    );
+  }
+
+  async function excluir(agendamentoId: number) {
+    setDeletingId(agendamentoId);
+    try {
+      await api(`/api/agendamentos/${agendamentoId}`, { method: 'DELETE' });
+      if (editando?.id === agendamentoId) {
+        fecharForm();
+      }
+      await buscar();
+    } catch (e: any) {
+      Alert.alert('Erro', e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (loading) return <ActivityIndicator style={styles.center} color={colors.primary} size="large" />;
 
   return (
@@ -164,9 +195,22 @@ export default function AgendamentosScreen() {
                 {item.ativo ? 'Ativo' : 'Inativo'}
               </Text>
             </View>
-            <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
-              <Ionicons name="pencil-outline" size={18} color={colors.primary} />
-            </TouchableOpacity>
+            <View style={styles.actions}>
+              <TouchableOpacity style={styles.editBtn} onPress={() => abrirEditar(item)}>
+                <Ionicons name="pencil-outline" size={18} color={colors.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => confirmarExclusao(item)}
+                disabled={deletingId === item.id}
+              >
+                {deletingId === item.id ? (
+                  <ActivityIndicator size="small" color={colors.error} />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color={colors.error} />
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
         ListFooterComponent={
@@ -317,11 +361,16 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   cardMuted: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   ativoTag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  actions: { flexDirection: 'row', gap: 8, marginLeft: 8 },
   editBtn: {
     padding: 8,
     borderRadius: 10,
     backgroundColor: colors.primarySoft,
-    marginLeft: 8,
+  },
+  deleteBtn: {
+    padding: 8,
+    borderRadius: 10,
+    backgroundColor: colors.errorBg,
   },
   form: {
     backgroundColor: colors.surface,

@@ -28,7 +28,7 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
     )
 
 
-def gerar_par_tokens(user_id: int, email: str, session_id: str | None = None) -> tuple[str, str, str]:
+def gerar_par_tokens(user_id: int, email: str | None, session_id: str | None = None) -> tuple[str, str, str]:
     session = session_id or str(uuid.uuid4())
     now = datetime.now(timezone.utc)
 
@@ -53,6 +53,17 @@ def gerar_par_tokens(user_id: int, email: str, session_id: str | None = None) ->
     access_token = jwt.encode(access_payload, settings.jwt_secret, algorithm=settings.jwt_alg)
     refresh_token = jwt.encode(refresh_payload, settings.jwt_secret, algorithm=settings.jwt_alg)
     return access_token, refresh_token, session
+
+
+def gerar_phone_verification_token(phone_e164: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "phone_e164": phone_e164,
+        "typ": "phone_verification",
+        "iat": now,
+        "exp": now + timedelta(minutes=10),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_alg)
 
 
 def hash_token(token: str) -> str:

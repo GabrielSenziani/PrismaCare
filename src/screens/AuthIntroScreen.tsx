@@ -40,6 +40,7 @@ export default function AuthIntroScreen({ navigation }: Props) {
   const lift = useRef(new Animated.Value(18)).current;
   const pulse = useRef(new Animated.Value(0)).current;
   const scrollX = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<any>(null);
 
   useEffect(() => {
     Animated.parallel([
@@ -95,6 +96,14 @@ export default function AuthIntroScreen({ navigation }: Props) {
     extrapolate: 'clamp',
   });
 
+  function irParaProximoSlide() {
+    scrollRef.current?.scrollTo({ x: width, animated: true });
+  }
+
+  function irParaSlide(posicao: number) {
+    scrollRef.current?.scrollTo({ x: width * posicao, animated: true });
+  }
+
   return (
     <LinearGradient
       colors={['#DDF7EC', colors.gradientStart, colors.gradientMid, colors.primaryDeep]}
@@ -113,6 +122,7 @@ export default function AuthIntroScreen({ navigation }: Props) {
 
       <SafeAreaView style={styles.safe}>
         <Animated.ScrollView
+          ref={scrollRef}
           horizontal
           pagingEnabled
           bounces={false}
@@ -166,10 +176,10 @@ export default function AuthIntroScreen({ navigation }: Props) {
               </Text>
             </View>
 
-            <View style={styles.swipeHint}>
+            <TouchableOpacity style={styles.swipeHint} activeOpacity={0.82} onPress={irParaProximoSlide}>
               <Text style={styles.swipeText}>Arraste para conhecer</Text>
               <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.86)" />
-            </View>
+            </TouchableOpacity>
           </Animated.View>
 
           {SLIDES.map((slide, index) => {
@@ -214,10 +224,14 @@ export default function AuthIntroScreen({ navigation }: Props) {
                       <Ionicons name="arrow-forward" size={20} color={colors.primaryDeep} />
                     </TouchableOpacity>
                   ) : (
-                    <View style={styles.inlineHint}>
+                    <TouchableOpacity
+                      style={styles.inlineHint}
+                      activeOpacity={0.82}
+                      onPress={() => irParaSlide(index + 2)}
+                    >
                       <Text style={styles.inlineHintText}>Continue arrastando</Text>
                       <Ionicons name="arrow-forward" size={16} color={colors.primaryDeep} />
-                    </View>
+                    </TouchableOpacity>
                   )}
                 </Animated.View>
               </View>

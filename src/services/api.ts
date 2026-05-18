@@ -18,9 +18,30 @@ export type AuthResponse = {
   user: {
     id: number;
     nome: string | null;
-    email: string;
+    email: string | null;
   };
 };
+
+export type PhoneLookupResponse = {
+  ok: true;
+  formatted_phone: string;
+  channel: 'whatsapp';
+};
+
+export type PhoneCodeSendResponse = {
+  ok: true;
+  formatted_phone: string;
+  expires_in_seconds: number;
+};
+
+export type PhoneCodeVerificationResponse =
+  | AuthResponse
+  | {
+      authenticated: false;
+      needs_name: true;
+      verification_token: string;
+      formatted_phone: string;
+    };
 
 type AuthHandlers = {
   onSessionUpdate?: (tokens: SessionTokens) => void;
@@ -132,10 +153,11 @@ export type UserProfile = {
   id: number;
   nome: string | null;
   telefone: string | null;
-  email: string;
+  email: string | null;
   data_nascimento: string | null;
   timezone: string;
   timezone_confirmed: boolean;
+  phone_verified_at?: string | null;
 };
 
 export async function fetchMe(): Promise<UserProfile> {
@@ -186,5 +208,33 @@ export async function googleLoginRequest(idToken: string) {
   return api<AuthResponse>('/api/auth/google', {
     method: 'POST',
     body: JSON.stringify({ id_token: idToken }),
+  });
+}
+
+export async function lookupPhoneRequest(ddd: string, numero: string) {
+  return api<PhoneLookupResponse>('/api/auth/lookup-phone', {
+    method: 'POST',
+    body: JSON.stringify({ ddd, numero }),
+  });
+}
+
+export async function sendPhoneCodeRequest(ddd: string, numero: string) {
+  return api<PhoneCodeSendResponse>('/api/auth/send-phone-code', {
+    method: 'POST',
+    body: JSON.stringify({ ddd, numero }),
+  });
+}
+
+export async function verifyPhoneCodeRequest(ddd: string, numero: string, codigo: string) {
+  return api<PhoneCodeVerificationResponse>('/api/auth/verify-phone-code', {
+    method: 'POST',
+    body: JSON.stringify({ ddd, numero, codigo }),
+  });
+}
+
+export async function completePhoneRegistrationRequest(verificationToken: string, nome: string) {
+  return api<AuthResponse>('/api/auth/complete-phone-registration', {
+    method: 'POST',
+    body: JSON.stringify({ verification_token: verificationToken, nome }),
   });
 }

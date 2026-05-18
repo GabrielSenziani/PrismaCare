@@ -2,6 +2,7 @@ import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.core.phone_auth import normalize_existing_brazil_phone
 from app.database import get_db
 from app.repositories import user_repo
 from app.schemas.user_schema import UserCreate, UserProfileUpdate, UserResponse, TimezoneUpdate
@@ -16,14 +17,25 @@ def create_user(user: UserCreate, conn: sqlite3.Connection = Depends(get_db)):
     if existente:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
+    phone_e164 = None
+    telefone = user.telefone
+    if user.telefone:
+        normalized_phone = normalize_existing_brazil_phone(user.telefone)
+        if not normalized_phone:
+            raise HTTPException(status_code=422, detail="Telefone inválido")
+        phone_e164, telefone = normalized_phone
+        if user_repo.buscar_usuario_por_phone_e164(conn, phone_e164):
+            raise HTTPException(status_code=400, detail="Telefone já cadastrado")
+
     data_nasc = str(user.data_nascimento) if user.data_nascimento else None
     novo_user = user_repo.criar_usuario(
         conn,
         nome=user.nome,
-        telefone=user.telefone,
+        telefone=telefone,
         email=user.email,
         senha=hash_senha(user.senha),
         data_nascimento=data_nasc,
+        phone_e164=phone_e164,
     )
     return novo_user
 

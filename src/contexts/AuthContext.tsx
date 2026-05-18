@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 import { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } from '@react-native-google-signin/google-signin';
 import {
+  AuthResponse,
   configureAuthHandlers,
   fetchMe,
   googleLoginRequest,
@@ -17,6 +18,7 @@ type AuthContextType = {
   timezoneConfirmed: boolean | null;
   sessionExpiredMessage: string | null;
   signIn(username: string, password: string): Promise<void>;
+  hydrateSession(payload: AuthResponse): Promise<void>;
   signInWithGoogle(): Promise<boolean>;
   signOut(): void;
   consumeSessionExpiredMessage(): void;
@@ -56,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await applySessionPayload(payload);
   }
 
-  async function applySessionPayload(payload: Awaited<ReturnType<typeof loginRequest>>) {
+  async function applySessionPayload(payload: AuthResponse) {
     setSession({
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token,
@@ -120,6 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       timezoneConfirmed,
       sessionExpiredMessage,
       signIn,
+      hydrateSession: applySessionPayload,
       signInWithGoogle,
       signOut,
       consumeSessionExpiredMessage,

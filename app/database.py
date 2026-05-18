@@ -1,6 +1,8 @@
 import sqlite3
 import os
 
+from app.core.phone_auth import normalize_existing_brazil_phone
+
 DATABASE_PATH = os.getenv(
     "DATABASE_PATH",
     os.path.join(os.path.dirname(os.path.dirname(__file__)), "prismacare.db"),
@@ -126,14 +128,17 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nome TEXT,
                 telefone TEXT,
-                email TEXT NOT NULL UNIQUE,
-                senha TEXT NOT NULL,
+                phone_e164 TEXT,
+                phone_verified_at TEXT,
+                email TEXT UNIQUE,
+                senha TEXT,
                 auth_provider TEXT NOT NULL DEFAULT 'local',
                 google_sub TEXT,
                 avatar_url TEXT,
                 data_nascimento TEXT,
                 timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
-                timezone_confirmed INTEGER NOT NULL DEFAULT 0
+                timezone_confirmed INTEGER NOT NULL DEFAULT 0,
+                CHECK (email IS NOT NULL OR phone_e164 IS NOT NULL)
             );
 
             CREATE TABLE IF NOT EXISTS medicamentos (
@@ -243,6 +248,21 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_confirmacoes_data_hora_prevista
             ON confirmacoes (data_hora_prevista);
+
+            CREATE TABLE IF NOT EXISTS phone_verification_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                phone_e164 TEXT NOT NULL,
+                code_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                consumed_at TEXT,
+                invalidated_at TEXT,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                last_failed_at TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_phone_codes_phone_created
+            ON phone_verification_codes (phone_e164, created_at DESC);
         """)
         conn.commit()
 
@@ -275,6 +295,8 @@ def init_db():
             "ALTER TABLE users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'",
             "ALTER TABLE users ADD COLUMN google_sub TEXT",
             "ALTER TABLE users ADD COLUMN avatar_url TEXT",
+            "ALTER TABLE users ADD COLUMN phone_e164 TEXT",
+            "ALTER TABLE users ADD COLUMN phone_verified_at TEXT",
         ]:
             try:
                 conn.execute(sql)
@@ -284,10 +306,13 @@ def init_db():
                     raise
 
         user_columns = conn.execute("PRAGMA table_info(users)").fetchall()
+        user_column_map = {column["name"]: column for column in user_columns}
         must_rebuild_users = any(
             column["name"] in {"nome", "telefone"} and column["notnull"] == 1
             for column in user_columns
         )
+        must_rebuild_users = must_rebuild_users or "phone_e164" not in user_column_map or "phone_verified_at" not in user_column_map
+        must_rebuild_users = must_rebuild_users or user_column_map["email"]["notnull"] == 1 or user_column_map["senha"]["notnull"] == 1
         if must_rebuild_users:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.executescript("""
@@ -295,25 +320,30 @@ def init_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nome TEXT,
                     telefone TEXT,
-                    email TEXT NOT NULL UNIQUE,
-                    senha TEXT NOT NULL,
+                    phone_e164 TEXT,
+                    phone_verified_at TEXT,
+                    email TEXT UNIQUE,
+                    senha TEXT,
                     auth_provider TEXT NOT NULL DEFAULT 'local',
                     google_sub TEXT,
                     avatar_url TEXT,
                     data_nascimento TEXT,
                     timezone TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
-                    timezone_confirmed INTEGER NOT NULL DEFAULT 0
+                    timezone_confirmed INTEGER NOT NULL DEFAULT 0,
+                    CHECK (email IS NOT NULL OR phone_e164 IS NOT NULL)
                 );
 
                 INSERT INTO users_new (
-                    id, nome, telefone, email, senha, auth_provider, google_sub, avatar_url,
+                    id, nome, telefone, phone_e164, phone_verified_at, email, senha, auth_provider, google_sub, avatar_url,
                     data_nascimento, timezone, timezone_confirmed
                 )
                 SELECT
                     id,
                     NULLIF(nome, ''),
                     NULLIF(telefone, ''),
-                    email,
+                    phone_e164,
+                    phone_verified_at,
+                    NULLIF(email, ''),
                     senha,
                     COALESCE(auth_provider, 'local'),
                     google_sub,
@@ -329,11 +359,42 @@ def init_db():
             conn.commit()
             conn.execute("PRAGMA foreign_keys = ON")
 
+        existing_phone_rows = conn.execute(
+            "SELECT id, telefone, phone_e164 FROM users WHERE telefone IS NOT NULL AND TRIM(telefone) <> ''"
+        ).fetchall()
+        seen_phone_e164: set[str] = set(
+            row["phone_e164"]
+            for row in conn.execute("SELECT phone_e164 FROM users WHERE phone_e164 IS NOT NULL").fetchall()
+        )
+        for row in existing_phone_rows:
+            if row["phone_e164"]:
+                continue
+            normalized = normalize_existing_brazil_phone(row["telefone"])
+            if not normalized:
+                continue
+            phone_e164, formatted_phone = normalized
+            if phone_e164 in seen_phone_e164:
+                continue
+            conn.execute(
+                "UPDATE users SET telefone = ?, phone_e164 = ? WHERE id = ?",
+                (formatted_phone, phone_e164, row["id"]),
+            )
+            seen_phone_e164.add(phone_e164)
+        conn.commit()
+
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub_unique
             ON users(google_sub)
             WHERE google_sub IS NOT NULL
+            """
+        )
+        conn.commit()
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone_e164_unique
+            ON users(phone_e164)
+            WHERE phone_e164 IS NOT NULL
             """
         )
         conn.commit()

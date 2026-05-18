@@ -19,7 +19,7 @@ class RateLimiter:
             while q and (now - q[0]) > window_seconds:
                 q.popleft()
             if len(q) >= limit:
-                audit_event("rate_limit_exceeded", key=key, event=event)
+                audit_event("rate_limit_exceeded", key=key, limited_event=event)
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Limite de requisições excedido",

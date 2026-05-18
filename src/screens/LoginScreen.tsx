@@ -44,7 +44,7 @@ export default function LoginScreen({ navigation }: Props) {
     if (!contact.trim()) next.contact = 'Informe seu número ou e-mail.';
     if (!password) next.password = 'Informe sua senha.';
     else if (isPhoneCandidate(contact)) {
-      next.contact = 'Login com número será habilitado em breve. Por enquanto, entre com seu e-mail e senha.';
+      next.contact = 'Para entrar com número, volte e use o fluxo por código no WhatsApp.';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -107,7 +107,7 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Inicie com seu número ou e-mail</Text>
-              <Text style={styles.cardSubtitle}>Use seu e-mail para entrar hoje. O acesso por número será liberado em breve.</Text>
+              <Text style={styles.cardSubtitle}>Use e-mail e senha aqui, ou volte para a tela principal para entrar com código pelo WhatsApp.</Text>
             </View>
 
             <InputField

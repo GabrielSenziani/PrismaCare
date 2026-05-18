@@ -4,7 +4,7 @@ from app.core.constants import StatusConfirmacao, StatusEnvio
 from app.database import get_connection
 from app.services.whatsapp_service import enviar_whatsapp
 
-TOLERANCIA_MINUTOS = 30
+TOLERANCIA_MINUTOS = 5
 
 
 def varrer_e_notificar() -> dict:
