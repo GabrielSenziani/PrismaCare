@@ -46,6 +46,7 @@ def test_provider_evolution_sucesso_http(monkeypatch):
     def fake_post(url, json, headers, timeout):
         assert url.endswith("/message/sendText/prismacare")
         assert json["number"] == "5511999999999"
+        assert json["text"] == "Teste PrismaCare"
         assert headers["apikey"] == "secret-key"
         assert timeout == 10
         return FakeResponse()

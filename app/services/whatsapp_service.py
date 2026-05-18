@@ -90,9 +90,7 @@ def _enviar_whatsapp_evolution(telefone: str, mensagem: str) -> dict:
     url = f"{settings.evolution_api_url.rstrip('/')}/message/sendText/{settings.evolution_instance_name}"
     payload = {
         "number": normalized_phone,
-        "textMessage": {
-            "text": mensagem,
-        },
+        "text": mensagem,
     }
     headers = {
         "Content-Type": "application/json",
