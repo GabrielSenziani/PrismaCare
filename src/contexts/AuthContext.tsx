@@ -10,12 +10,15 @@ import {
   setSessionTokens,
   UserProfile,
 } from '../services/api';
+import { persistSessionTokens, readSessionTokens } from '../services/sessionStorage';
+import { resetPushRegistrationCache } from '../services/pushRegistrationService';
 import { getGoogleSigninModule, isExpoGoRuntime } from '../utils/googleSignin';
 
 type AuthContextType = {
   token: string | null;
   profile: UserProfile | null;
   timezoneConfirmed: boolean | null;
+  authReady: boolean;
   sessionExpiredMessage: string | null;
   signIn(username: string, password: string): Promise<void>;
   hydrateSession(payload: AuthResponse): Promise<void>;
@@ -32,17 +35,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSessionState] = useState<SessionTokens | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [timezoneConfirmed, setTimezoneConfirmed] = useState<boolean | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
 
   const setSession = useCallback((tokens: SessionTokens | null) => {
     setSessionTokens(tokens);
     setSessionState(tokens);
+    void persistSessionTokens(tokens);
   }, []);
 
   const handleSessionExpired = useCallback(() => {
     setSession(null);
     setProfile(null);
     setTimezoneConfirmed(null);
+    resetPushRegistrationCache();
     setSessionExpiredMessage('Sua sessão expirou. Entre novamente para continuar.');
   }, [setSession]);
 
@@ -52,6 +58,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       onSessionExpired: handleSessionExpired,
     });
   }, [handleSessionExpired, setSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreSession() {
+      try {
+        const stored = await readSessionTokens();
+        if (!stored) {
+          if (!cancelled) setAuthReady(true);
+          return;
+        }
+
+        setSessionTokens(stored);
+        if (!cancelled) {
+          setSessionState(stored);
+        }
+
+        const restoredProfile = await fetchMe();
+        if (cancelled) return;
+
+        setProfile(restoredProfile);
+        setTimezoneConfirmed(restoredProfile.timezone_confirmed);
+      } catch {
+        setSessionTokens(null);
+        await persistSessionTokens(null);
+        if (!cancelled) {
+          setSessionState(null);
+          setProfile(null);
+          setTimezoneConfirmed(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setAuthReady(true);
+        }
+      }
+    }
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function signIn(username: string, password: string) {
     const payload = await loginRequest(username, password);
@@ -106,6 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setSession(null);
     setProfile(null);
     setTimezoneConfirmed(null);
+    resetPushRegistrationCache();
   }
 
   function consumeSessionExpiredMessage() {
@@ -127,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token: session?.accessToken ?? null,
       profile,
       timezoneConfirmed,
+      authReady,
       sessionExpiredMessage,
       signIn,
       hydrateSession: applySessionPayload,
@@ -136,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       markTimezoneConfirmed,
       updateProfileName,
     }),
-    [session, profile, timezoneConfirmed, sessionExpiredMessage],
+    [session, profile, timezoneConfirmed, authReady, sessionExpiredMessage],
   );
 
   return (

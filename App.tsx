@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useContext, useEffect } from 'react';
-import { Alert } from 'react-native';
+import { Alert, ActivityIndicator, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -46,13 +46,21 @@ const screenOptions = {
 };
 
 function Navigation() {
-  const { token, timezoneConfirmed, sessionExpiredMessage, consumeSessionExpiredMessage } = useContext(AuthContext);
+  const { authReady, token, timezoneConfirmed, sessionExpiredMessage, consumeSessionExpiredMessage } = useContext(AuthContext);
 
   useEffect(() => {
     if (!sessionExpiredMessage) return;
     consumeSessionExpiredMessage();
     Alert.alert('Sessao expirada', sessionExpiredMessage);
   }, [consumeSessionExpiredMessage, sessionExpiredMessage]);
+
+  if (!authReady) {
+    return (
+      <View style={styles.bootSplash}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <Stack.Navigator screenOptions={screenOptions}>
@@ -101,3 +109,12 @@ export default function App() {
     </AuthProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  bootSplash: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background,
+  },
+});

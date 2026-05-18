@@ -225,6 +225,14 @@ def test_monitor_com_provider_evolution_atualiza_notificacao(client, headers_a, 
     assert result["notificacoes_criadas"] == 1
     assert result["notificacoes_enviadas"] == 1
     assert len(calls) == 1
+    assert calls[0][0] == "11988880001"
+    mensagem = calls[0][1]
+    assert mensagem.startswith(
+        "[PrismaCare] Atenção: Ana Teste ainda não confirmou a dose de Paracetamol (750mg) das "
+    )
+    assert mensagem.endswith(
+        ".\nPor favor, verifique se ele conseguiu tomar o medicamento."
+    )
 
     notificacoes = client.get("/api/notificacoes", headers=headers_a).json()
     assert len(notificacoes) == 1

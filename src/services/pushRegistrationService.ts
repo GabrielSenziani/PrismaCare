@@ -14,7 +14,8 @@ function getNotificationsModule(): NotificationsModule | null {
 
   try {
     notificationsModule = require('expo-notifications') as NotificationsModule;
-  } catch {
+  } catch (error) {
+    console.warn('[push] expo-notifications require falhou', error);
     notificationsModule = null;
   }
 
@@ -34,41 +35,89 @@ function resolveDeviceName(): string | undefined {
 }
 
 export async function syncRemotePushTokenRegistration(userId: number | null, timezoneConfirmed: boolean) {
-  if (!userId || !timezoneConfirmed || Platform.OS === 'web' || isExpoGoRuntime()) {
+  console.log('[push] sync chamada', {
+    userId,
+    timezoneConfirmed,
+    platform: Platform.OS,
+    appOwnership: Constants.appOwnership,
+    executionEnvironment: Constants.executionEnvironment,
+  });
+
+  if (!userId) {
+    console.log('[push] skip: userId ausente');
+    return;
+  }
+  if (!timezoneConfirmed) {
+    console.log('[push] skip: timezone nao confirmado');
+    return;
+  }
+  if (Platform.OS === 'web') {
+    console.log('[push] skip: platform web');
+    return;
+  }
+  if (isExpoGoRuntime()) {
+    console.log('[push] skip: rodando em Expo Go');
     return;
   }
 
   const Notifications = getNotificationsModule();
-  if (!Notifications) return;
+  if (!Notifications) {
+    console.log('[push] skip: modulo expo-notifications indisponivel');
+    return;
+  }
 
   const projectId = resolveProjectId();
-  if (!projectId) return;
+  if (!projectId) {
+    console.log('[push] skip: projectId ausente', {
+      extra: Constants.expoConfig?.extra,
+      easConfig: Constants.easConfig,
+    });
+    return;
+  }
 
   try {
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
+    console.log('[push] permissao atual', status);
 
     if (status !== 'granted') {
       const requested = await Notifications.requestPermissionsAsync();
       status = requested.status;
+      console.log('[push] permissao apos request', status);
     }
 
-    if (status !== 'granted') return;
+    if (status !== 'granted') {
+      console.log('[push] skip: permissao negada');
+      return;
+    }
 
     const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
     const expoPushToken = tokenResponse.data;
-    if (!expoPushToken) return;
+    console.log('[push] expo token obtido', expoPushToken ? `${expoPushToken.slice(0, 20)}...` : '(vazio)');
+    if (!expoPushToken) {
+      console.log('[push] skip: token vazio');
+      return;
+    }
 
     const registrationKey = `${userId}:${expoPushToken}`;
-    if (registrationKey === lastRegisteredKey) return;
+    if (registrationKey === lastRegisteredKey) {
+      console.log('[push] skip: token ja registrado nesta sessao');
+      return;
+    }
 
-    await registerPushTokenRequest({
+    console.log('[push] POST /api/push-tokens iniciando');
+    const response = await registerPushTokenRequest({
       expo_push_token: expoPushToken,
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
       device_name: resolveDeviceName(),
     });
     lastRegisteredKey = registrationKey;
+    console.log('[push] POST /api/push-tokens ok', response);
   } catch (error) {
-    console.warn('Falha ao registrar push token remoto.', error);
+    console.warn('[push] falha no registro remoto', error);
   }
+}
+
+export function resetPushRegistrationCache() {
+  lastRegisteredKey = null;
 }

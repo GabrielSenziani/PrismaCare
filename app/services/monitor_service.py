@@ -53,9 +53,15 @@ def varrer_e_notificar() -> dict:
             # Busca o id_usuario via medicamento → agendamento
             row = conn.execute(
                 """
-                SELECT m.id_usuario, m.id AS medicamento_id, m.nome AS nome_medicamento, m.dosagem
+                SELECT
+                    m.id_usuario,
+                    m.id AS medicamento_id,
+                    m.nome AS nome_medicamento,
+                    m.dosagem,
+                    u.nome AS nome_usuario
                 FROM agendamentos a
                 JOIN medicamentos m ON m.id = a.id_medicamento
+                JOIN users u ON u.id = m.id_usuario
                 WHERE a.id = ?
                 """,
                 (agendamento_id,),
@@ -68,6 +74,7 @@ def varrer_e_notificar() -> dict:
             medicamento_id = row["medicamento_id"]
             nome_medicamento = row["nome_medicamento"]
             dosagem = row["dosagem"]
+            nome_usuario = (row["nome_usuario"] or "").strip() or "O usuário"
             horario_previsto = confirmacao["data_hora_prevista"]
 
             # Busca contatos ativos do usuário
@@ -122,10 +129,13 @@ def varrer_e_notificar() -> dict:
 
                 if dados:
                     horario = dados["data_hora_prevista"].split(" ")[1][:5]
+                    medicamento_label = nome_medicamento
+                    if dosagem:
+                        medicamento_label += f" ({dosagem})"
                     mensagem = (
-                        f"[PrismaCare] Atenção: o medicamento "
-                        f"{nome_medicamento} ({dosagem}) "
-                        f"previsto para {horario} não foi confirmado pelo usuário."
+                        f"[PrismaCare] Atenção: {nome_usuario} ainda não confirmou a dose de "
+                        f"{medicamento_label} das {horario}.\n"
+                        "Por favor, verifique se ele conseguiu tomar o medicamento."
                     )
                     resultado = enviar_whatsapp(dados["telefone"], mensagem)
                     conn.execute(

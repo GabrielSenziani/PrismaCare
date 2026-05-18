@@ -30,7 +30,8 @@
     "plugins": [
       "@react-native-community/datetimepicker",
       "expo-notifications",
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "expo-secure-store"
     ],
     "updates": {
       "enabled": false
