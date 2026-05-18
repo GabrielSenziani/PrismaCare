@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "847506417453",
+    "project_id": "prismacare-98f05",
+    "storage_bucket": "prismacare-98f05.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:847506417453:android:7d6f3001eda6313e7a55a4",
+        "android_client_info": {
+          "package_name": "com.caueshaze.prismacare"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAG6swG7uN2wRnahT6syH0iaX2yslwXtIw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
