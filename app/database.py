@@ -263,6 +263,38 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_phone_codes_phone_created
             ON phone_verification_codes (phone_e164, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS push_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_usuario INTEGER NOT NULL,
+                expo_push_token TEXT NOT NULL UNIQUE,
+                platform TEXT NOT NULL,
+                device_name TEXT,
+                ativo INTEGER NOT NULL DEFAULT 1,
+                ultimo_erro TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (id_usuario) REFERENCES users(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_push_tokens_usuario_ativo
+            ON push_tokens (id_usuario, ativo);
+
+            CREATE TABLE IF NOT EXISTS dose_overdue_push_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_confirmacao INTEGER NOT NULL,
+                id_push_token INTEGER NOT NULL,
+                status_envio TEXT NOT NULL CHECK(status_envio IN ('ENVIADO','FALHA')),
+                expo_ticket_id TEXT,
+                erro TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (id_confirmacao) REFERENCES confirmacoes(id),
+                FOREIGN KEY (id_push_token) REFERENCES push_tokens(id)
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_dose_overdue_push_attempts_confirmacao_token
+            ON dose_overdue_push_attempts (id_confirmacao, id_push_token);
         """)
         conn.commit()
 

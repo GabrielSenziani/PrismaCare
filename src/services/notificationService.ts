@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
+import { isExpoGoRuntime } from '../utils/googleSignin';
+
+type NotificationsModule = typeof import('expo-notifications');
 
 const REMINDER_CHANNEL_ID = 'dose-reminders';
 const REMINDER_SOURCE = 'prismacare';
@@ -24,10 +26,26 @@ type ReminderData = {
 
 let configured = false;
 let permissionDenied = false;
+let notificationsModule: NotificationsModule | null | undefined;
+
+function getNotificationsModule(): NotificationsModule | null {
+  if (Platform.OS === 'web' || isExpoGoRuntime()) return null;
+  if (notificationsModule !== undefined) return notificationsModule;
+
+  try {
+    notificationsModule = require('expo-notifications') as NotificationsModule;
+  } catch {
+    notificationsModule = null;
+  }
+
+  return notificationsModule;
+}
 
 // Issue #40 usa apenas notificações locais; push remoto/tokens Expo/FCM/APNs ficam fora deste fluxo.
 export function configureDoseNotifications() {
-  if (configured || Platform.OS === 'web') return;
+  if (configured || Platform.OS === 'web' || isExpoGoRuntime()) return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
   configured = true;
 
   Notifications.setNotificationHandler({
@@ -41,7 +59,9 @@ export function configureDoseNotifications() {
 }
 
 async function ensureAndroidChannel() {
-  if (Platform.OS !== 'android') return;
+  if (Platform.OS !== 'android' || isExpoGoRuntime()) return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
 
   await Notifications.setNotificationChannelAsync(REMINDER_CHANNEL_ID, {
     name: 'Lembretes de medicamentos',
@@ -50,7 +70,9 @@ async function ensureAndroidChannel() {
 }
 
 async function requestNotificationPermission(): Promise<boolean> {
-  if (Platform.OS === 'web' || permissionDenied) return false;
+  if (Platform.OS === 'web' || permissionDenied || isExpoGoRuntime()) return false;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return false;
 
   const current = await Notifications.getPermissionsAsync();
   if (current.status === 'granted') return true;
@@ -102,7 +124,9 @@ function buildValidReminders(doses: DoseReminderInput[]) {
 }
 
 export async function syncDoseReminders(doses: DoseReminderInput[]) {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || isExpoGoRuntime()) return;
+  const Notifications = getNotificationsModule();
+  if (!Notifications) return;
 
   try {
     configureDoseNotifications();

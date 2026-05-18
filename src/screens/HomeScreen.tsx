@@ -7,18 +7,19 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { AuthContext } from '../contexts/AuthContext';
 import { RootStackParamList } from '../../App';
 import { api } from '../services/api';
 import { DoseReminderInput, syncDoseReminders } from '../services/notificationService';
+import { syncRemotePushTokenRegistration } from '../services/pushRegistrationService';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -40,7 +41,7 @@ const MENU: MenuItem[] = [
 ];
 
 export default function HomeScreen({ navigation }: Props) {
-  const { profile, signOut } = useContext(AuthContext);
+  const { profile, timezoneConfirmed, signOut } = useContext(AuthContext);
   const [hasContacts, setHasContacts] = useState<boolean | null>(null);
   const [hasMedications, setHasMedications] = useState<boolean | null>(null);
 
@@ -59,6 +60,7 @@ export default function HomeScreen({ navigation }: Props) {
           setHasContacts(contacts.length > 0);
           setHasMedications(medications.length > 0);
           await syncDoseReminders(doses);
+          await syncRemotePushTokenRegistration(profile?.id ?? null, timezoneConfirmed === true);
         } catch (e: any) {
           if (!active) return;
           Alert.alert('Erro', e.message);
@@ -69,7 +71,7 @@ export default function HomeScreen({ navigation }: Props) {
       return () => {
         active = false;
       };
-    }, []),
+    }, [profile?.id, timezoneConfirmed]),
   );
 
   const displayName = profile?.nome?.trim();

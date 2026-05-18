@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta
 
 from app.core.constants import StatusConfirmacao, StatusEnvio
+from app.core.config import settings
 from app.database import get_connection
+from app.repositories import push_token_repo
+from app.services.push_notification_service import enviar_push_dose_atrasada
 from app.services.whatsapp_service import enviar_whatsapp
 
-TOLERANCIA_MINUTOS = 5
+TOLERANCIA_MINUTOS = settings.monitor_tolerance_minutes
 
 
 def varrer_e_notificar() -> dict:
@@ -19,6 +22,7 @@ def varrer_e_notificar() -> dict:
     confirmacoes_atualizadas = 0
     notificacoes_criadas = 0
     notificacoes_enviadas = 0
+    push_notificacoes_enviadas = 0
 
     try:
         limite = (datetime.now() - timedelta(minutes=TOLERANCIA_MINUTOS)).strftime(
@@ -49,7 +53,7 @@ def varrer_e_notificar() -> dict:
             # Busca o id_usuario via medicamento → agendamento
             row = conn.execute(
                 """
-                SELECT m.id_usuario
+                SELECT m.id_usuario, m.id AS medicamento_id, m.nome AS nome_medicamento, m.dosagem
                 FROM agendamentos a
                 JOIN medicamentos m ON m.id = a.id_medicamento
                 WHERE a.id = ?
@@ -61,6 +65,10 @@ def varrer_e_notificar() -> dict:
                 continue
 
             id_usuario = row["id_usuario"]
+            medicamento_id = row["medicamento_id"]
+            nome_medicamento = row["nome_medicamento"]
+            dosagem = row["dosagem"]
+            horario_previsto = confirmacao["data_hora_prevista"]
 
             # Busca contatos ativos do usuário
             contatos = conn.execute(
@@ -103,8 +111,7 @@ def varrer_e_notificar() -> dict:
 
                 dados = conn.execute(
                     """
-                    SELECT ct.telefone, m.nome AS nome_medicamento, m.dosagem,
-                           c.data_hora_prevista
+                    SELECT ct.telefone, c.data_hora_prevista
                     FROM contatos ct, agendamentos a, medicamentos m, confirmacoes c
                     WHERE ct.id = ? AND a.id = ?
                       AND m.id = a.id_medicamento
@@ -117,7 +124,7 @@ def varrer_e_notificar() -> dict:
                     horario = dados["data_hora_prevista"].split(" ")[1][:5]
                     mensagem = (
                         f"[PrismaCare] Atenção: o medicamento "
-                        f"{dados['nome_medicamento']} ({dados['dosagem']}) "
+                        f"{nome_medicamento} ({dosagem}) "
                         f"previsto para {horario} não foi confirmado pelo usuário."
                     )
                     resultado = enviar_whatsapp(dados["telefone"], mensagem)
@@ -137,6 +144,42 @@ def varrer_e_notificar() -> dict:
                     if resultado["status_envio"] == StatusEnvio.ENVIADO:
                         notificacoes_enviadas += 1
 
+            if settings.expo_push_enabled:
+                push_tokens = push_token_repo.listar_push_tokens_ativos(conn, id_usuario)
+                for push_token in push_tokens:
+                    ja_enviado = push_token_repo.buscar_push_attempt(
+                        conn,
+                        confirmacao_id=confirmacao_id,
+                        push_token_id=push_token["id"],
+                    )
+                    if ja_enviado:
+                        continue
+
+                    push_result = enviar_push_dose_atrasada(
+                        expo_push_token=push_token["expo_push_token"],
+                        medicamento=nome_medicamento,
+                        dosagem=dosagem,
+                        horario_previsto=horario_previsto,
+                        confirmacao_id=confirmacao_id,
+                        medicamento_id=medicamento_id,
+                    )
+                    push_token_repo.registrar_push_attempt(
+                        conn,
+                        confirmacao_id=confirmacao_id,
+                        push_token_id=push_token["id"],
+                        status_envio=push_result["status_envio"],
+                        expo_ticket_id=push_result["expo_ticket_id"],
+                        erro=push_result["erro"],
+                    )
+                    if push_result["invalid_token"]:
+                        push_token_repo.marcar_push_token_inativo_por_id(
+                            conn,
+                            push_token_id=push_token["id"],
+                            ultimo_erro=push_result["erro"],
+                        )
+                    if push_result["status_envio"] == StatusEnvio.ENVIADO:
+                        push_notificacoes_enviadas += 1
+
         conn.commit()
 
     finally:
@@ -146,4 +189,5 @@ def varrer_e_notificar() -> dict:
         "confirmacoes_atualizadas": confirmacoes_atualizadas,
         "notificacoes_criadas": notificacoes_criadas,
         "notificacoes_enviadas": notificacoes_enviadas,
+        "push_notificacoes_enviadas": push_notificacoes_enviadas,
     }

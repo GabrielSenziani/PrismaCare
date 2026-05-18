@@ -45,6 +45,10 @@ const webDateInputStyle = {
   fontFamily: 'inherit',
 } as any;
 
+const webTimeInputStyle = {
+  ...webDateInputStyle,
+} as any;
+
 export default function AgendamentosScreen() {
   const [lista, setLista] = useState<Agendamento[]>([]);
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([]);
@@ -58,6 +62,7 @@ export default function AgendamentosScreen() {
   const [frequencia, setFrequencia] = useState('');
   const [dataInicio, setDataInicio] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const buscar = useCallback(async () => {
     try {
@@ -96,10 +101,36 @@ export default function AgendamentosScreen() {
     setHorario(''); setFrequencia('');
     setDataInicio(new Date());
     setShowDatePicker(false);
+    setShowTimePicker(false);
   }
 
   function formatarData(d: Date) {
     return d.toISOString().split('T')[0]; // YYYY-MM-DD
+  }
+
+  function formatarHorario(date: Date) {
+    return date.toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+
+  function horarioParaDate(valor: string) {
+    const [hour, minute] = valor.split(':').map((part) => Number(part));
+    const base = new Date();
+    base.setSeconds(0, 0);
+    base.setHours(Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0, 0, 0);
+    return base;
+  }
+
+  function onChangeHorario(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) {
+      setHorario(digits);
+      return;
+    }
+    setHorario(`${digits.slice(0, 2)}:${digits.slice(2)}`);
   }
 
   async function salvar() {
@@ -258,19 +289,46 @@ export default function AgendamentosScreen() {
               )}
 
               <InputField
-                label="Horário"
-                iconName="time-outline"
-                placeholder="HH:MM  (ex: 08:00)"
-                value={horario}
-                onChangeText={setHorario}
-              />
-              <InputField
                 label="Frequência"
                 iconName="repeat-outline"
                 placeholder="Ex: diário, 2x ao dia"
                 value={frequencia}
                 onChangeText={setFrequencia}
               />
+              <Text style={styles.selectorLabel}>HORÁRIO</Text>
+              {Platform.OS === 'web' ? (
+                // @ts-ignore — React Native Web permite elementos HTML nativos
+                <input
+                  type="time"
+                  value={horario}
+                  onChange={(e: any) => onChangeHorario(e.target.value)}
+                  style={webTimeInputStyle}
+                />
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.dateBtn}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <Ionicons name="time-outline" size={18} color={colors.primary} />
+                    <Text style={styles.dateBtnText}>
+                      {horario || 'Selecionar horário'}
+                    </Text>
+                    <Ionicons name="chevron-down-outline" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
+                  {showTimePicker && (
+                    <DateTimePicker
+                      value={horario ? horarioParaDate(horario) : new Date()}
+                      mode="time"
+                      display="default"
+                      onChange={(_e: unknown, date?: Date) => {
+                        setShowTimePicker(false);
+                        if (date) setHorario(formatarHorario(date));
+                      }}
+                    />
+                  )}
+                </>
+              )}
               {/* Seletor de data */}
               <Text style={styles.selectorLabel}>DATA DE INÍCIO</Text>
               {Platform.OS === 'web' ? (

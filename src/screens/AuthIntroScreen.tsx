@@ -3,7 +3,6 @@ import {
   Animated,
   Easing,
   Image,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
 import { RootStackParamList } from '../../App';
 
@@ -242,9 +242,9 @@ export default function AuthIntroScreen({ navigation }: Props) {
         <View style={styles.dots}>
           {[0, 1, 2].map((index) => {
             const inputRange = [(index - 1) * width, index * width, (index + 1) * width];
-            const dotWidth = scrollX.interpolate({
+            const dotScaleX = scrollX.interpolate({
               inputRange,
-              outputRange: [8, 24, 8],
+              outputRange: [1, 3, 1],
               extrapolate: 'clamp',
             });
             const dotOpacity = scrollX.interpolate({
@@ -259,8 +259,8 @@ export default function AuthIntroScreen({ navigation }: Props) {
                 style={[
                   styles.dot,
                   {
-                    width: dotWidth,
                     opacity: dotOpacity,
+                    transform: [{ scaleX: dotScaleX }],
                   },
                 ]}
               />

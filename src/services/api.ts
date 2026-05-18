@@ -43,6 +43,24 @@ export type PhoneCodeVerificationResponse =
       formatted_phone: string;
     };
 
+export type PushTokenPayload = {
+  expo_push_token: string;
+  platform: 'android' | 'ios';
+  device_name?: string;
+};
+
+export type PushTokenResponse = {
+  id: number;
+  id_usuario: number;
+  expo_push_token: string;
+  platform: 'android' | 'ios';
+  device_name: string | null;
+  ativo: boolean;
+  ultimo_erro: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type AuthHandlers = {
   onSessionUpdate?: (tokens: SessionTokens) => void;
   onSessionExpired?: () => void;
@@ -236,5 +254,19 @@ export async function completePhoneRegistrationRequest(verificationToken: string
   return api<AuthResponse>('/api/auth/complete-phone-registration', {
     method: 'POST',
     body: JSON.stringify({ verification_token: verificationToken, nome }),
+  });
+}
+
+export async function registerPushTokenRequest(payload: PushTokenPayload) {
+  return api<PushTokenResponse>('/api/push-tokens', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function unregisterPushTokenRequest(expoPushToken: string) {
+  return api<PushTokenResponse>('/api/push-tokens/unregister', {
+    method: 'POST',
+    body: JSON.stringify({ expo_push_token: expoPushToken }),
   });
 }

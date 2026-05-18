@@ -30,6 +30,7 @@ import {
   sendPhoneCodeRequest,
   verifyPhoneCodeRequest,
 } from '../services/api';
+import { isExpoGoRuntime } from '../utils/googleSignin';
 import { RootStackParamList } from '../../App';
 
 type Props = {
@@ -58,13 +59,24 @@ function splitPhoneCandidate(value: string): { ddd: string; numero: string } | n
 function formatPhonePreview(ddd: string, numero: string): string {
   const cleanDdd = ddd.replace(/\D/g, '').slice(0, 2);
   const cleanNumero = numero.replace(/\D/g, '').slice(0, 9);
-  if (!cleanDdd && !cleanNumero) return '+55';
+  if (!cleanDdd && !cleanNumero) return '';
   if (cleanNumero.length > 4) {
     const head = cleanNumero.length === 9 ? cleanNumero.slice(0, 5) : cleanNumero.slice(0, 4);
     const tail = cleanNumero.length === 9 ? cleanNumero.slice(5) : cleanNumero.slice(4);
-    return `+55 ${cleanDdd}${cleanDdd ? ' ' : ''}${head}${tail ? `-${tail}` : ''}`.trim();
+    return `${cleanDdd}${cleanDdd ? ' ' : ''}${head}${tail ? `-${tail}` : ''}`.trim();
   }
-  return `+55 ${cleanDdd}${cleanDdd ? ' ' : ''}${cleanNumero}`.trim();
+  return `${cleanDdd}${cleanDdd ? ' ' : ''}${cleanNumero}`.trim();
+}
+
+function normalizePhoneDisplay(value: string): string {
+  let digits = value.replace(/\D/g, '');
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    digits = digits.slice(2);
+  }
+  if (digits.length !== 10 && digits.length !== 11) {
+    return value.replace(/^\+?55\s*/, '').trim();
+  }
+  return formatPhonePreview(digits.slice(0, 2), digits.slice(2));
 }
 
 export default function AuthEntryScreen({ navigation }: Props) {
@@ -77,7 +89,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
   const [codigo, setCodigo] = useState('');
   const [nome, setNome] = useState('');
   const [verificationToken, setVerificationToken] = useState('');
-  const [formattedPhone, setFormattedPhone] = useState('+55');
+  const [formattedPhone, setFormattedPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -85,6 +97,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
   const normalizedEmail = contact.trim().toLowerCase();
   const isExisting = step === 'existingPassword';
   const isNew = step === 'newPassword';
+  const shouldHideGoogleInDev = __DEV__ && isExpoGoRuntime();
   const entrance = useRef(new Animated.Value(0)).current;
   const stepProgress = useRef(new Animated.Value(1)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -195,7 +208,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
     try {
       const lookup = await lookupPhoneRequest(ddd, numero);
       const sent = await sendPhoneCodeRequest(ddd, numero);
-      setFormattedPhone(sent.formatted_phone ?? lookup.formatted_phone);
+      setFormattedPhone(normalizePhoneDisplay(sent.formatted_phone ?? lookup.formatted_phone));
       setCodigo('');
       setStep('phoneCode');
     } catch (e: any) {
@@ -221,7 +234,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
         return;
       }
       setVerificationToken(result.verification_token);
-      setFormattedPhone(result.formatted_phone);
+      setFormattedPhone(normalizePhoneDisplay(result.formatted_phone));
       setNome('');
       setStep('phoneName');
     } catch (e: any) {
@@ -434,9 +447,6 @@ export default function AuthEntryScreen({ navigation }: Props) {
                 {step === 'phoneDetails' ? (
                   <>
                     <View style={styles.phoneRow}>
-                      <View style={styles.phoneCountry}>
-                        <Text style={styles.phoneCountryText}>+55</Text>
-                      </View>
                       <View style={styles.phoneField}>
                         <Text style={styles.phoneLabel}>DDD</Text>
                         <TextInput
@@ -547,7 +557,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
                   style={styles.primaryButton}
                 />
 
-                {step === 'contact' ? (
+                {step === 'contact' && !shouldHideGoogleInDev ? (
                   <>
                     <View style={styles.dividerRow}>
                       <View style={styles.dividerLine} />
@@ -709,21 +719,6 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     gap: 10,
     marginBottom: 12,
-  },
-  phoneCountry: {
-    minWidth: 64,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: 16,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  phoneCountryText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.primaryDeep,
   },
   phoneField: {
     flex: 1,

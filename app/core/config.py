@@ -12,6 +12,8 @@ class Settings:
     evolution_api_url: str | None
     evolution_api_key: str | None
     evolution_instance_name: str | None
+    expo_push_enabled: bool
+    expo_push_api_url: str
     access_ttl_min: int
     refresh_ttl_days: int
     cors_allow_origins: list[str]
@@ -25,6 +27,8 @@ class Settings:
     rate_limit_api_per_min: int
     rate_limit_phone_send_per_min: int
     rate_limit_phone_verify_per_min: int
+    monitor_tolerance_minutes: int
+    monitor_scan_interval_minutes: int
     disable_scheduler: bool
 
 
@@ -106,6 +110,8 @@ def load_settings() -> Settings:
         evolution_api_url=_get_optional("EVOLUTION_API_URL"),
         evolution_api_key=_get_optional("EVOLUTION_API_KEY"),
         evolution_instance_name=_get_optional("EVOLUTION_INSTANCE_NAME"),
+        expo_push_enabled=_get_bool("EXPO_PUSH_ENABLED", False),
+        expo_push_api_url=os.getenv("EXPO_PUSH_API_URL", "https://exp.host/--/api/v2/push/send"),
         access_ttl_min=_get_int("ACCESS_TTL_MIN", 15),
         refresh_ttl_days=_get_int("REFRESH_TTL_DAYS", 14),
         cors_allow_origins=origins,
@@ -119,6 +125,8 @@ def load_settings() -> Settings:
         rate_limit_api_per_min=_get_int("RATE_LIMIT_API_PER_MIN", 120),
         rate_limit_phone_send_per_min=_get_int("RATE_LIMIT_PHONE_SEND_PER_MIN", 3),
         rate_limit_phone_verify_per_min=_get_int("RATE_LIMIT_PHONE_VERIFY_PER_MIN", 10),
+        monitor_tolerance_minutes=_get_int("MONITOR_TOLERANCE_MINUTES", 5),
+        monitor_scan_interval_minutes=_get_int("MONITOR_SCAN_INTERVAL_MINUTES", 5),
         disable_scheduler=_get_bool("DISABLE_SCHEDULER", False),
     )
 

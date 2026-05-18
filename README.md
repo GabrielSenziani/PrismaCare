@@ -267,6 +267,12 @@ ACCESS_TTL_MIN=15
 REFRESH_TTL_DAYS=14
 CORS_ALLOW_ORIGINS=http://localhost:8081
 ENABLE_MANUAL_MONITOR_ENDPOINT=false
+DISABLE_SCHEDULER=false
+MONITOR_TOLERANCE_MINUTES=5
+MONITOR_SCAN_INTERVAL_MINUTES=5
+EXPO_PUSH_ENABLED=false
+EXPO_PUSH_API_URL=https://exp.host/--/api/v2/push/send
+EXPO_PROJECT_ID=
 WHATSAPP_PROVIDER=simulation
 EVOLUTION_API_URL=http://127.0.0.1:8080
 EVOLUTION_API_KEY=
@@ -285,7 +291,7 @@ RATE_LIMIT_PHONE_VERIFY_PER_MIN=10
 EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=your-google-web-client-id.apps.googleusercontent.com
 ```
 
-Em VPS/produção, mantenha `ENABLE_MANUAL_MONITOR_ENDPOINT=false`. Essa flag bloqueia apenas o disparo manual via `POST /api/monitor/varredura`; a execução automática do APScheduler continua funcionando normalmente.
+Em VPS/produção, mantenha `ENABLE_MANUAL_MONITOR_ENDPOINT=false`. Essa flag bloqueia apenas o disparo manual via `POST /api/monitor/varredura`; a execução automática do APScheduler continua funcionando normalmente. Para testes e apresentação, você pode reduzir `MONITOR_TOLERANCE_MINUTES` e `MONITOR_SCAN_INTERVAL_MINUTES` sem editar código.
 
 ### Google Sign-In
 
@@ -301,6 +307,13 @@ Em VPS/produção, mantenha `ENABLE_MANUAL_MONITOR_ENDPOINT=false`. Essa flag bl
 - O login por telefone envia um código de 6 dígitos pelo WhatsApp, válido por 5 minutos.
 - `GET /api/whatsapp/status` exige autenticação e nunca expõe `EVOLUTION_API_KEY`.
 - `POST /api/whatsapp/test-send` exige autenticação e só funciona com `ENABLE_WHATSAPP_TEST_ENDPOINT=true`.
+
+### Push remoto via Expo
+
+- `EXPO_PUSH_ENABLED=false` desativa o envio remoto por padrão.
+- `EXPO_PUSH_API_URL` define o endpoint da Expo Push API usado pelo backend.
+- Push remoto exige build nativa; não funciona no Expo Go.
+- O fluxo de push remoto é separado dos lembretes locais já usados em `syncDoseReminders`.
 
 ---
 

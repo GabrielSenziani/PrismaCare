@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } from '@react-native-google-signin/google-signin';
 import {
   AuthResponse,
   configureAuthHandlers,
@@ -11,6 +10,7 @@ import {
   setSessionTokens,
   UserProfile,
 } from '../services/api';
+import { getGoogleSigninModule, isExpoGoRuntime } from '../utils/googleSignin';
 
 type AuthContextType = {
   token: string | null;
@@ -71,6 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signInWithGoogle(): Promise<boolean> {
+    const googleSigninModule = getGoogleSigninModule();
+    if (!googleSigninModule || isExpoGoRuntime()) {
+      throw new Error('Entrar com Google fica disponível no app instalado, não no Expo Go.');
+    }
+
+    const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = googleSigninModule;
+
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       const response = await GoogleSignin.signIn();

@@ -18,6 +18,7 @@ from app.routes.auth_route import router as auth_router
 from app.routes.monitor_route import router as monitor_router
 from app.routes.historico_route import router as historico_router
 from app.routes.whatsapp_route import router as whatsapp_router
+from app.routes.push_token_route import router as push_token_router
 from app.services.monitor_service import varrer_e_notificar
 
 
@@ -26,7 +27,12 @@ async def lifespan(app: FastAPI):
     init_db()
     if not settings.disable_scheduler:
         scheduler = BackgroundScheduler()
-        scheduler.add_job(varrer_e_notificar, "interval", minutes=5, id="monitor_varredura")
+        scheduler.add_job(
+            varrer_e_notificar,
+            "interval",
+            minutes=settings.monitor_scan_interval_minutes,
+            id="monitor_varredura",
+        )
         scheduler.start()
     yield
     if not settings.disable_scheduler:
@@ -53,6 +59,7 @@ app.include_router(confirmacao_router, prefix="/api", tags=["Confirmações"])
 app.include_router(notificacao_router, prefix="/api", tags=["Notificações"])
 app.include_router(monitor_router, prefix="/api", tags=["Monitor"])
 app.include_router(whatsapp_router, prefix="/api", tags=["WhatsApp"])
+app.include_router(push_token_router, prefix="/api")
 app.include_router(dose_router, prefix="/api", tags=["Doses"])
 app.include_router(historico_router, prefix="/api", tags=["Doses"])
 

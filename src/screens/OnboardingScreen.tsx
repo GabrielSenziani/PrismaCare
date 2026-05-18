@@ -1,4 +1,4 @@
-import React, { useContext, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -35,7 +35,7 @@ function timezoneTitle(timezone: string | null): string {
 }
 
 export default function OnboardingScreen() {
-  const { timezoneConfirmed, markTimezoneConfirmed, updateProfileName } = useContext(AuthContext);
+  const { profile, timezoneConfirmed, markTimezoneConfirmed, updateProfileName } = useContext(AuthContext);
   const [step, setStep] = useState<Step>('welcome');
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState(detectDeviceTimezone() ?? 'America/Sao_Paulo');
@@ -44,6 +44,13 @@ export default function OnboardingScreen() {
   const [error, setError] = useState<string | undefined>();
 
   const detectedTimezone = useMemo(() => detectDeviceTimezone(), []);
+  const hasExistingName = (profile?.nome?.trim().length ?? 0) > 0;
+
+  useEffect(() => {
+    if (hasExistingName && step === 'name') {
+      setStep('timezone');
+    }
+  }, [hasExistingName, step]);
 
   async function handleNameNext(skip = false) {
     const trimmed = name.trim();
@@ -126,11 +133,13 @@ export default function OnboardingScreen() {
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Seu cuidado começa por aqui</Text>
                 <Text style={styles.cardText}>
-                  Primeiro vamos confirmar como chamar você e o fuso horário dos lembretes.
+                  {hasExistingName
+                    ? 'Agora só falta confirmar o fuso horário dos lembretes.'
+                    : 'Primeiro vamos confirmar como chamar você e o fuso horário dos lembretes.'}
                 </Text>
                 <PrimaryButton
                   title="Começar"
-                  onPress={() => setStep('name')}
+                  onPress={() => setStep(hasExistingName ? 'timezone' : 'name')}
                   iconName="arrow-forward"
                   style={styles.action}
                 />
