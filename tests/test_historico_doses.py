@@ -14,8 +14,9 @@ def _criar_agendamento(client, headers, medicamento, horario="08:00"):
     med_id = client.post("/api/medicamentos", json=medicamento, headers=headers).json()["id"]
     payload = {
         "id_medicamento": med_id,
-        "horario": horario,
-        "frequencia": "diario",
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": [horario],
         "data_inicio": _hoje(),
     }
     agend_id = client.post("/api/agendamentos", json=payload, headers=headers).json()["id"]

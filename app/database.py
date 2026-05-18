@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import json
+from datetime import datetime
 
 from app.core.phone_auth import normalize_existing_brazil_phone
 
@@ -166,11 +168,23 @@ def init_db():
                 id_medicamento INTEGER NOT NULL,
                 horario TEXT NOT NULL,
                 frequencia TEXT NOT NULL,
+                tipo_recorrencia TEXT,
+                dias_semana_json TEXT,
                 data_inicio TEXT,
                 data_fim TEXT,
                 ativo INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (id_medicamento) REFERENCES medicamentos(id)
             );
+
+            CREATE TABLE IF NOT EXISTS agendamento_horarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_agendamento INTEGER NOT NULL,
+                horario TEXT NOT NULL,
+                FOREIGN KEY (id_agendamento) REFERENCES agendamentos(id)
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_agendamento_horarios_unique
+            ON agendamento_horarios (id_agendamento, horario);
 
             CREATE TABLE IF NOT EXISTS confirmacoes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -319,6 +333,68 @@ def init_db():
             ON confirmacoes (id_agendamento, data_hora_prevista)
             """
         )
+        conn.commit()
+
+        for sql in [
+            "ALTER TABLE agendamentos ADD COLUMN tipo_recorrencia TEXT",
+            "ALTER TABLE agendamentos ADD COLUMN dias_semana_json TEXT",
+        ]:
+            try:
+                conn.execute(sql)
+                conn.commit()
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+
+        agendamentos = conn.execute(
+            """
+            SELECT id, horario, frequencia, data_inicio, tipo_recorrencia, dias_semana_json
+            FROM agendamentos
+            """
+        ).fetchall()
+
+        for agendamento in agendamentos:
+            tipo_recorrencia = agendamento["tipo_recorrencia"]
+            dias_semana_json = agendamento["dias_semana_json"]
+            frequencia = (agendamento["frequencia"] or "").strip().lower()
+            horario = agendamento["horario"]
+            data_inicio = agendamento["data_inicio"]
+
+            if not tipo_recorrencia:
+                if frequencia == "semanal":
+                    tipo_recorrencia = "dias_semana"
+                    dia_semana = None
+                    if data_inicio:
+                        try:
+                            dia_semana = int(datetime.strptime(data_inicio, "%Y-%m-%d").strftime("%w"))
+                        except ValueError:
+                            dia_semana = None
+                    dias_semana_json = json.dumps([dia_semana]) if dia_semana is not None else None
+                else:
+                    tipo_recorrencia = "diario"
+                    dias_semana_json = None
+
+                conn.execute(
+                    """
+                    UPDATE agendamentos
+                    SET tipo_recorrencia = ?, dias_semana_json = ?
+                    WHERE id = ?
+                    """,
+                    (tipo_recorrencia, dias_semana_json, agendamento["id"]),
+                )
+
+            existing_horarios = conn.execute(
+                "SELECT 1 FROM agendamento_horarios WHERE id_agendamento = ? LIMIT 1",
+                (agendamento["id"],),
+            ).fetchone()
+            if not existing_horarios and horario:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO agendamento_horarios (id_agendamento, horario)
+                    VALUES (?, ?)
+                    """,
+                    (agendamento["id"], horario),
+                )
         conn.commit()
 
         for sql in [

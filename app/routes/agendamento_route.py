@@ -28,8 +28,9 @@ def create_agendamento(
         novo = agendamento_repo.criar_agendamento(
             conn,
             id_medicamento=agendamento.id_medicamento,
-            horario=agendamento.horario,
-            frequencia=agendamento.frequencia,
+            tipo_recorrencia=agendamento.tipo_recorrencia,
+            dias_semana=agendamento.dias_semana,
+            horarios=agendamento.horarios,
             data_inicio=data_inicio,
             data_fim=data_fim,
             ativo=agendamento.ativo,
@@ -103,12 +104,10 @@ def atualizar_agendamento(
         if medicamento["id_usuario"] != usuario["id"]:
             raise HTTPException(status_code=403, detail="Acesso negado")
 
-    return agendamento_repo.atualizar_agendamento(
-        conn, agendamento_id,
-        id_medicamento=dados.id_medicamento,
-        horario=dados.horario,
-        frequencia=dados.frequencia,
-        data_inicio=str(dados.data_inicio) if dados.data_inicio else None,
-        data_fim=str(dados.data_fim) if dados.data_fim else None,
-        ativo=dados.ativo,
-    )
+    payload = dados.model_dump(exclude_unset=True)
+    if "data_inicio" in payload and payload["data_inicio"] is not None:
+        payload["data_inicio"] = str(payload["data_inicio"])
+    if "data_fim" in payload and payload["data_fim"] is not None:
+        payload["data_fim"] = str(payload["data_fim"])
+
+    return agendamento_repo.atualizar_agendamento(conn, agendamento_id, payload)

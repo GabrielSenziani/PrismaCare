@@ -17,8 +17,9 @@ def _criar_stack(client, headers, contato=CONTATO_1):
     contato_id = client.post("/api/contatos", json=contato, headers=headers).json()["id"]
     agend = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": "diario",
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00"],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers).json()["id"]
@@ -99,8 +100,9 @@ def test_multiplos_contatos(client, headers_a):
     client.post("/api/contatos", json=CONTATO_2, headers=headers_a)
     agend = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": "diario",
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00"],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers_a).json()["id"]
@@ -122,8 +124,9 @@ def test_usuario_sem_contato_nao_quebra(client, headers_a):
     med_id = client.post("/api/medicamentos", json=MED, headers=headers_a).json()["id"]
     agend = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": "diario",
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00"],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers_a).json()["id"]

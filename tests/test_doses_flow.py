@@ -14,10 +14,14 @@ def _criar_stack(client, headers, frequencia="diario"):
     """Cria medicamento + contato + agendamento. Retorna (med_id, contato_id, agend_id)."""
     med_id = client.post("/api/medicamentos", json=MED, headers=headers).json()["id"]
     contato_id = client.post("/api/contatos", json=CONTATO, headers=headers).json()["id"]
+    dias_semana = None
+    if frequencia == "semanal":
+        dias_semana = [int(datetime.now(FUSO).strftime("%w"))]
     agend = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": frequencia,
+        "tipo_recorrencia": "dias_semana" if frequencia == "semanal" else "diario",
+        "dias_semana": dias_semana,
+        "horarios": ["08:00"],
         "data_inicio": _hoje(),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers).json()["id"]
@@ -46,6 +50,25 @@ def test_doses_nao_duplicadas(client, headers_a):
 
     doses = client.get("/api/doses/hoje", headers=headers_a).json()
     assert len(doses) == 1
+
+
+def test_agendamento_diario_com_dois_horarios_gera_duas_doses(client, headers_a):
+    med_id = client.post("/api/medicamentos", json=MED, headers=headers_a).json()["id"]
+    contato_id = client.post("/api/contatos", json=CONTATO, headers=headers_a).json()["id"]
+    assert contato_id > 0
+
+    agend = {
+        "id_medicamento": med_id,
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00", "20:00"],
+        "data_inicio": _hoje(),
+    }
+    client.post("/api/agendamentos", json=agend, headers=headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    assert len(doses) == 2
+    assert [dose["horario_previsto"][11:16] for dose in doses] == ["08:00", "20:00"]
 
 
 def test_dose_confirmada_nao_gera_nova_pendente_no_mesmo_horario(client, headers_a):
@@ -79,13 +102,31 @@ def test_agendamento_semanal_dia_errado(client, headers_a):
     ontem = (datetime.now(FUSO) - timedelta(days=1)).strftime("%Y-%m-%d")
     agend = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": "semanal",
+        "tipo_recorrencia": "dias_semana",
+        "dias_semana": [int(datetime.strptime(ontem, "%Y-%m-%d").strftime("%w"))],
+        "horarios": ["08:00"],
         "data_inicio": ontem,
     }
     client.post("/api/agendamentos", json=agend, headers=headers_a)
     doses = client.get("/api/doses/hoje", headers=headers_a).json()
     assert len(doses) == 0
+
+
+def test_agendamento_por_dias_especificos_dia_nao_selecionado_nao_gera_dose(client, headers_a):
+    med_id = client.post("/api/medicamentos", json=MED, headers=headers_a).json()["id"]
+    dia_hoje = int(datetime.now(FUSO).strftime("%w"))
+    outro_dia = (dia_hoje + 1) % 7
+    agend = {
+        "id_medicamento": med_id,
+        "tipo_recorrencia": "dias_semana",
+        "dias_semana": [outro_dia],
+        "horarios": ["08:00"],
+        "data_inicio": _hoje(),
+    }
+    client.post("/api/agendamentos", json=agend, headers=headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    assert doses == []
 
 
 # ---------- Dose vencida → NAO_CONFIRMADO + notificação ----------

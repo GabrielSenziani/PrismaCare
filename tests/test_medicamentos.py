@@ -43,8 +43,9 @@ def test_nao_deleta_medicamento_com_agendamento_vinculado(client, headers_a):
     med_id = client.post("/api/medicamentos", json=MED, headers=headers_a).json()["id"]
     agendamento = {
         "id_medicamento": med_id,
-        "horario": "08:00",
-        "frequencia": "diario",
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00"],
         "data_inicio": "2026-05-17",
     }
     r_agendamento = client.post("/api/agendamentos", json=agendamento, headers=headers_a)

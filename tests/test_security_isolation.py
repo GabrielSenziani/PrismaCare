@@ -14,7 +14,13 @@ def _hoje():
 def _criar_agendamento(client, headers, med_id):
     return client.post(
         "/api/agendamentos",
-        json={"id_medicamento": med_id, "horario": "09:00", "frequencia": "diario", "data_inicio": _hoje()},
+        json={
+            "id_medicamento": med_id,
+            "tipo_recorrencia": "diario",
+            "dias_semana": None,
+            "horarios": ["09:00"],
+            "data_inicio": _hoje(),
+        },
         headers=headers,
     ).json()["id"]
 
