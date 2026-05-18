@@ -166,3 +166,6 @@ temp/
 # SQLite database (local dev e persistent volume em prod)
 data/
 prismacare.db
+
+# Builds e artefatos    
+builds/
