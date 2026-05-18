@@ -2,6 +2,8 @@ import React, { useCallback, useContext, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
+  Pressable,
   ScrollView,
   View,
   Text,
@@ -20,6 +22,7 @@ import { RootStackParamList } from '../../App';
 import { api } from '../services/api';
 import { DoseReminderInput, syncDoseReminders } from '../services/notificationService';
 import { syncRemotePushTokenRegistration } from '../services/pushRegistrationService';
+import PrimaryButton from '../components/PrimaryButton';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -44,6 +47,7 @@ export default function HomeScreen({ navigation }: Props) {
   const { profile, timezoneConfirmed, signOut } = useContext(AuthContext);
   const [hasContacts, setHasContacts] = useState<boolean | null>(null);
   const [hasMedications, setHasMedications] = useState<boolean | null>(null);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -78,6 +82,19 @@ export default function HomeScreen({ navigation }: Props) {
   const greeting = displayName ? `Olá, ${displayName}` : 'Olá!';
   const showSuggestions = hasContacts === false || hasMedications === false;
 
+  function abrirConfirmacaoLogout() {
+    setShowLogoutModal(true);
+  }
+
+  function fecharConfirmacaoLogout() {
+    setShowLogoutModal(false);
+  }
+
+  function confirmarLogout() {
+    fecharConfirmacaoLogout();
+    signOut();
+  }
+
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -92,7 +109,7 @@ export default function HomeScreen({ navigation }: Props) {
               <Text style={styles.greeting}>{greeting}</Text>
               <Text style={styles.greetingSub}>O que você quer fazer?</Text>
             </View>
-            <TouchableOpacity style={styles.logoutBtn} onPress={signOut}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={abrirConfirmacaoLogout}>
               <Ionicons name="log-out-outline" size={22} color={colors.white} />
             </TouchableOpacity>
           </View>
@@ -165,6 +182,34 @@ export default function HomeScreen({ navigation }: Props) {
           ))}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={fecharConfirmacaoLogout}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={fecharConfirmacaoLogout}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={styles.modalIconWrap}>
+              <Ionicons name="log-out-outline" size={24} color={colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Sair da conta</Text>
+            <Text style={styles.modalBody}>
+              Você realmente deseja sair do PrismaCare neste aparelho?
+            </Text>
+            <PrimaryButton
+              title="Sim, sair"
+              onPress={confirmarLogout}
+              iconName="arrow-forward-outline"
+              style={styles.modalPrimaryButton}
+            />
+            <TouchableOpacity style={styles.modalSecondaryButton} onPress={fecharConfirmacaoLogout}>
+              <Text style={styles.modalSecondaryText}>Cancelar</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -192,6 +237,59 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.48)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: 24,
+    backgroundColor: colors.surface,
+    padding: 24,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  modalIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
+  modalPrimaryButton: {
+    marginTop: 24,
+  },
+  modalSecondaryButton: {
+    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  modalSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
   content: {
     padding: 16,
