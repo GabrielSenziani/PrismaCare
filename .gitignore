@@ -162,3 +162,7 @@ Desktop.ini
 logs/
 tmp/
 temp/
+
+# SQLite database (local dev e persistent volume em prod)
+data/
+prismacare.db

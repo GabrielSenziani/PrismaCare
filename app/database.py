@@ -5,10 +5,11 @@ from datetime import datetime
 
 from app.core.phone_auth import normalize_existing_brazil_phone
 
-DATABASE_PATH = os.getenv(
-    "DATABASE_PATH",
-    os.path.join(os.path.dirname(os.path.dirname(__file__)), "prismacare.db"),
-)
+_REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+_DEFAULT_DB_PATH = os.path.join(_REPO_ROOT, "data", "prismacare.db")
+
+DATABASE_PATH = os.getenv("DATABASE_PATH", _DEFAULT_DB_PATH)
+os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
 # Padrão de datas: o backend usa o timezone IANA de cada usuário para calcular
 # datas e horários locais. Timestamps são armazenados como strings no formato
