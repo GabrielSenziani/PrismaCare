@@ -1,4 +1,4 @@
-import React, { useContext, useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { ColorPalette } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import { AuthContext } from '../contexts/AuthContext';
 import { patchTimezone } from '../services/api';
 import PrimaryButton from '../components/PrimaryButton';
@@ -21,6 +22,8 @@ function detectDeviceTimezone(): string {
 }
 
 export default function TimezoneWelcomeScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { timezoneConfirmed, markTimezoneConfirmed } = useContext(AuthContext);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +98,7 @@ export default function TimezoneWelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorPalette) => StyleSheet.create({
   loadingContainer: {
     flex: 1,
     alignItems: 'center',

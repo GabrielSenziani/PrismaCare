@@ -7,7 +7,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors, useAccessibility } from '../contexts/AccessibilityContext';
 import InputField from '../components/InputField';
@@ -141,7 +141,7 @@ export default function ContatosScreen() {
         }
         renderItem={({ item, index }) => (
           <Animated.View
-            entering={FadeInDown.delay(index * 50).duration(300).springify().damping(16)}
+            entering={FadeIn.delay(index * 40).duration(260)}
             style={[styles.card, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
           >
             <View style={[styles.cardIcon, { backgroundColor: colors.primarySoft }]}>
@@ -186,7 +186,7 @@ export default function ContatosScreen() {
         ListFooterComponent={
           showForm ? (
             <Animated.View
-              entering={FadeInDown.duration(280).springify().damping(15)}
+              entering={FadeIn.duration(220)}
               style={[styles.form, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
             >
               <AppText variant="heading" color={colors.textPrimary} style={{ marginBottom: 16 }}>

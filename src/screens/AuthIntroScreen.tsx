@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Animated,
   Easing,
@@ -14,7 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { ColorPalette } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import { persistAuthIntroSeen } from '../services/appPreferences';
 import { RootStackParamList } from '../../App';
 
@@ -36,6 +37,8 @@ const SLIDES = [
 ] as const;
 
 export default function AuthIntroScreen({ navigation }: Props) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { width } = useWindowDimensions();
   const fade = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(18)).current;
@@ -275,7 +278,7 @@ export default function AuthIntroScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorPalette) => StyleSheet.create({
   container: {
     flex: 1,
     overflow: 'hidden',

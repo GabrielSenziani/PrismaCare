@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { ColorPalette } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import InputField from '../components/InputField';
 import PrimaryButton from '../components/PrimaryButton';
 import { AuthContext } from '../contexts/AuthContext';
@@ -35,6 +36,8 @@ function timezoneTitle(timezone: string | null): string {
 }
 
 export default function OnboardingScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { profile, timezoneConfirmed, markTimezoneConfirmed, updateProfileName } = useContext(AuthContext);
   const [step, setStep] = useState<Step>('welcome');
   const [name, setName] = useState('');
@@ -234,7 +237,7 @@ export default function OnboardingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorPalette) => StyleSheet.create({
   flex: { flex: 1 },
   loadingContainer: {
     flex: 1,

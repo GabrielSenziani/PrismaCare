@@ -11,7 +11,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInDown, FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -180,7 +180,7 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
         ) : nextDose ? (
           <Animated.View
-            entering={FadeInDown.duration(420).springify().damping(14)}
+            entering={FadeIn.duration(320)}
             style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.primary }]}
           >
             <View style={styles.heroTop}>
@@ -263,7 +263,7 @@ export default function HomeScreen({ navigation }: Props) {
           {MENU.map((item, index) => (
             <Animated.View
               key={item.screen}
-              entering={FadeInDown.delay(120 + index * 70).duration(380).springify().damping(16)}
+              entering={FadeIn.delay(80 + index * 40).duration(280)}
               style={styles.cardWrap}
             >
               <TouchableOpacity

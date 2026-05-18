@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -18,7 +18,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../theme/colors';
+import { ColorPalette } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import InputField from '../components/InputField';
 import PrimaryButton from '../components/PrimaryButton';
 import { AuthContext } from '../contexts/AuthContext';
@@ -80,6 +81,8 @@ function normalizePhoneDisplay(value: string): string {
 }
 
 export default function AuthEntryScreen({ navigation }: Props) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const { signIn, signInWithGoogle, hydrateSession } = useContext(AuthContext);
   const [step, setStep] = useState<Step>('contact');
   const [contact, setContact] = useState('');
@@ -587,7 +590,7 @@ export default function AuthEntryScreen({ navigation }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorPalette) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.background },
   header: {
     position: 'absolute',

@@ -9,7 +9,7 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
-import Animated, { FadeInDown, SlideInDown, FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -145,7 +145,7 @@ export default function DosesScreen({ navigation, route }: Props) {
           const isConfirming = confirming === item.confirmacao_id;
           return (
             <Animated.View
-              entering={FadeInDown.delay(index * 50).duration(320).springify().damping(16)}
+              entering={FadeIn.delay(index * 40).duration(260)}
               style={[styles.card, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
             >
               <View style={styles.cardTop}>
@@ -210,7 +210,7 @@ export default function DosesScreen({ navigation, route }: Props) {
         onRequestClose={fecharModal}
       >
         <Pressable style={styles.modalBackdrop} onPress={fecharModal}>
-          <Animated.View entering={SlideInDown.duration(280).springify().damping(15)} style={{ width: '100%' }}>
+          <Animated.View entering={FadeIn.duration(220)} style={{ width: '100%' }}>
             <Pressable
               style={[styles.modalCard, { backgroundColor: colors.surface, shadowColor: colors.shadow }]}
               onPress={() => {}}

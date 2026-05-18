@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,8 @@ import { Ionicons } from '@expo/vector-icons';
 const DateTimePicker: any = Platform.OS !== 'web'
   ? require('@react-native-community/datetimepicker').default
   : null;
-import { colors } from '../theme/colors';
+import { colors as defaultColors, ColorPalette } from '../theme/colors';
+import { useColors } from '../contexts/AccessibilityContext';
 import PrimaryButton from '../components/PrimaryButton';
 import { api } from '../services/api';
 import { syncCurrentDoseReminders } from '../services/doseReminderSync';
@@ -50,9 +51,9 @@ const webDateInputStyle = {
   padding: '12px 14px',
   fontSize: 15,
   borderRadius: 16,
-  border: `1.5px solid ${colors.border}`,
-  backgroundColor: colors.surface,
-  color: colors.textPrimary,
+  border: `1.5px solid ${defaultColors.border}`,
+  backgroundColor: defaultColors.surface,
+  color: defaultColors.textPrimary,
   marginBottom: 18,
   fontFamily: 'inherit',
 } as any;
@@ -116,6 +117,8 @@ function horarioParaDate(valor: string) {
 }
 
 export default function AgendamentosScreen() {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
   const [lista, setLista] = useState<Agendamento[]>([]);
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([]);
   const [loading, setLoading] = useState(true);
@@ -558,7 +561,7 @@ export default function AgendamentosScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ColorPalette) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 16, paddingBottom: 110, gap: 12 },
