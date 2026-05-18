@@ -2,10 +2,23 @@ import { Platform } from 'react-native';
 import { isExpoGoRuntime } from '../utils/googleSignin';
 
 type NotificationsModule = typeof import('expo-notifications');
+type NotificationResponse = {
+  notification?: {
+    request?: {
+      identifier?: string;
+      content?: {
+        data?: Record<string, unknown> | null;
+      };
+    };
+  };
+};
+type NotificationSubscription = { remove(): void };
+type DoseNotificationPressHandler = (confirmacaoId: number) => void;
 
 const REMINDER_CHANNEL_ID = 'dose-reminders';
 const REMINDER_SOURCE = 'prismacare';
 const REMINDER_KIND = 'dose-reminder';
+const OVERDUE_KIND = 'dose-overdue';
 
 export type DoseReminderInput = {
   confirmacao_id: number;
@@ -27,6 +40,10 @@ type ReminderData = {
 let configured = false;
 let permissionDenied = false;
 let notificationsModule: NotificationsModule | null | undefined;
+let notificationPressHandler: DoseNotificationPressHandler | null = null;
+let notificationResponseSubscription: NotificationSubscription | null = null;
+let lastHandledNotificationKey: string | null = null;
+let checkedInitialNotificationResponse = false;
 
 function getNotificationsModule(): NotificationsModule | null {
   if (Platform.OS === 'web' || isExpoGoRuntime()) return null;
@@ -42,7 +59,8 @@ function getNotificationsModule(): NotificationsModule | null {
 }
 
 // Issue #40 usa apenas notificações locais; push remoto/tokens Expo/FCM/APNs ficam fora deste fluxo.
-export function configureDoseNotifications() {
+export function configureDoseNotifications(onPressNotification?: DoseNotificationPressHandler) {
+  notificationPressHandler = onPressNotification ?? notificationPressHandler;
   if (configured || Platform.OS === 'web' || isExpoGoRuntime()) return;
   const Notifications = getNotificationsModule();
   if (!Notifications) return;
@@ -56,6 +74,22 @@ export function configureDoseNotifications() {
       shouldShowList: true,
     }),
   });
+
+  if (!notificationResponseSubscription) {
+    notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleNotificationResponse(response as NotificationResponse);
+    });
+  }
+
+  if (!checkedInitialNotificationResponse) {
+    checkedInitialNotificationResponse = true;
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) {
+        handleNotificationResponse(response as NotificationResponse);
+        void Notifications.clearLastNotificationResponseAsync();
+      }
+    });
+  }
 }
 
 async function ensureAndroidChannel() {
@@ -89,6 +123,41 @@ function reminderKeyFor(confirmacaoId: number) {
 
 function isPrismaCareDoseReminder(data: ReminderData | null | undefined) {
   return data?.source === REMINDER_SOURCE && data?.kind === REMINDER_KIND;
+}
+
+function isSupportedDoseNotificationKind(kind: unknown) {
+  return kind === REMINDER_KIND || kind === OVERDUE_KIND;
+}
+
+function extractDoseNotificationIntent(response: NotificationResponse): { confirmacaoId: number; notificationKey: string } | null {
+  const request = response.notification?.request;
+  const data = request?.content?.data;
+  if (!data || !isSupportedDoseNotificationKind(data.kind)) {
+    return null;
+  }
+
+  const confirmacaoId = Number(data.confirmacaoId);
+  if (!Number.isInteger(confirmacaoId) || confirmacaoId <= 0) {
+    return null;
+  }
+
+  const identifier = typeof request?.identifier === 'string' && request.identifier
+    ? request.identifier
+    : `${String(data.kind)}:${confirmacaoId}`;
+
+  return {
+    confirmacaoId,
+    notificationKey: identifier,
+  };
+}
+
+function handleNotificationResponse(response: NotificationResponse) {
+  const intent = extractDoseNotificationIntent(response);
+  if (!intent) return;
+  if (lastHandledNotificationKey === intent.notificationKey) return;
+
+  lastHandledNotificationKey = intent.notificationKey;
+  notificationPressHandler?.(intent.confirmacaoId);
 }
 
 function parseLocalDateTime(value: string): Date | null {

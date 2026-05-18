@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,17 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { api } from '../services/api';
 import { DoseReminderInput, syncDoseReminders } from '../services/notificationService';
+import PrimaryButton from '../components/PrimaryButton';
+import { RootStackParamList } from '../../App';
 
 type Dose = DoseReminderInput & {
   confirmacao_id: number;
@@ -29,12 +35,25 @@ const STATUS_CONFIG = {
   NAO_CONFIRMADO: { label: 'Não Confirmado', color: '#7F1D1D', bg: '#FEE2E2' }, // Tom vermelho escuro/vencido
 };
 
-export default function DosesScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, 'Doses'>;
+
+function canConfirmDose(status: Dose['status']) {
+  return status === 'PENDENTE' || status === 'NAO_CONFIRMADO';
+}
+
+function confirmLabelForStatus(status: Dose['status']) {
+  return status === 'NAO_CONFIRMADO' ? 'Confirmar mesmo assim' : 'Confirmar tomada';
+}
+
+export default function DosesScreen({ navigation, route }: Props) {
   const [doses, setDoses] = useState<Dose[]>([]);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState<number | null>(null);
+  const [modalConfirmacaoId, setModalConfirmacaoId] = useState<number | null>(null);
+  const lastHandledNotificationConfirmacaoIdRef = useRef<number | null>(null);
 
   const buscar = useCallback(async () => {
+    setLoading(true);
     try {
       const data = await api<Dose[]>('/api/doses/hoje');
       setDoses(data);
@@ -46,18 +65,58 @@ export default function DosesScreen() {
     }
   }, []);
 
-  useEffect(() => { buscar(); }, [buscar]);
+  useFocusEffect(
+    useCallback(() => {
+      buscar();
+    }, [buscar]),
+  );
+
+  useEffect(() => {
+    if (route.params?.confirmacaoId === undefined) {
+      lastHandledNotificationConfirmacaoIdRef.current = null;
+    }
+  }, [route.params?.confirmacaoId]);
+
+  const modalDose = useMemo(
+    () => doses.find((item) => item.confirmacao_id === modalConfirmacaoId) ?? null,
+    [doses, modalConfirmacaoId],
+  );
+
+  useEffect(() => {
+    const confirmacaoId = route.params?.confirmacaoId;
+    if (!confirmacaoId || loading) {
+      return;
+    }
+
+    if (lastHandledNotificationConfirmacaoIdRef.current === confirmacaoId) {
+      return;
+    }
+
+    lastHandledNotificationConfirmacaoIdRef.current = confirmacaoId;
+
+    const encontrada = doses.find((item) => item.confirmacao_id === confirmacaoId);
+    if (encontrada && canConfirmDose(encontrada.status)) {
+      setModalConfirmacaoId(confirmacaoId);
+    }
+
+    navigation.setParams({ confirmacaoId: undefined });
+  }, [doses, loading, navigation, route.params?.confirmacaoId]);
 
   async function confirmar(id: number) {
     setConfirming(id);
     try {
       await api(`/api/confirmacoes/${id}/confirmar`, { method: 'PUT' });
+      setModalConfirmacaoId((current) => (current === id ? null : current));
       await buscar();
     } catch (e: any) {
       Alert.alert('Erro', e.message);
     } finally {
       setConfirming(null);
     }
+  }
+
+  function fecharModal() {
+    setModalConfirmacaoId(null);
   }
 
   if (loading) return <ActivityIndicator style={styles.center} color={colors.primary} size="large" />;
@@ -95,7 +154,7 @@ export default function DosesScreen() {
                 ) : null}
               </View>
 
-              {item.status === 'PENDENTE' && (
+              {canConfirmDose(item.status) && (
                 <TouchableOpacity
                   style={styles.confirmBtn}
                   onPress={() => confirmar(item.confirmacao_id)}
@@ -106,7 +165,7 @@ export default function DosesScreen() {
                   ) : (
                     <>
                       <Ionicons name="checkmark-circle-outline" size={18} color={colors.white} />
-                      <Text style={styles.confirmText}>Confirmar tomada</Text>
+                      <Text style={styles.confirmText}>{confirmLabelForStatus(item.status)}</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -115,6 +174,39 @@ export default function DosesScreen() {
           );
         }}
       />
+
+      <Modal
+        visible={modalDose !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={fecharModal}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={fecharModal}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={styles.modalIconWrap}>
+              <Ionicons name="checkmark-circle-outline" size={24} color={colors.primary} />
+            </View>
+            <Text style={styles.modalTitle}>Confirmar tomada</Text>
+            {modalDose ? (
+              <>
+                <Text style={styles.modalBody}>
+                  Você tomou {modalDose.medicamento.nome} {modalDose.medicamento.dosagem} das{' '}
+                  {modalDose.horario_previsto?.substring(11, 16) ?? '—'}?
+                </Text>
+                <PrimaryButton
+                  title={confirmLabelForStatus(modalDose.status)}
+                  onPress={() => confirmar(modalDose.confirmacao_id)}
+                  loading={confirming === modalDose.confirmacao_id}
+                  style={styles.modalPrimaryButton}
+                />
+              </>
+            ) : null}
+            <TouchableOpacity style={styles.modalSecondaryButton} onPress={fecharModal}>
+              <Text style={styles.modalSecondaryText}>Agora não</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -164,4 +256,59 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   confirmText: { color: colors.white, fontWeight: '700', fontSize: 14 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(10, 15, 18, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  modalBody: {
+    marginTop: 10,
+    marginBottom: 22,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.textSecondary,
+  },
+  modalPrimaryButton: {
+    marginBottom: 12,
+  },
+  modalSecondaryButton: {
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
 });
