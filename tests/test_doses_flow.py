@@ -185,6 +185,19 @@ def test_dose_confirmada_nao_gera_nova_pendente_no_mesmo_horario(client, headers
     assert doses[0]["status"] == "CONFIRMADO"
 
 
+def test_excluir_agendamento_impede_doses_hoje_do_agendamento_inativado(client, headers_a):
+    _med_id, _contato_id, agend_id = _criar_stack(client, headers_a)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    assert len(doses) == 1
+
+    deleted = client.delete(f"/api/agendamentos/{agend_id}", headers=headers_a)
+    assert deleted.status_code == 200
+
+    doses_apos_delete = client.get("/api/doses/hoje", headers=headers_a).json()
+    assert doses_apos_delete == []
+
+
 # ---------- Frequência semanal ----------
 
 def test_agendamento_semanal_dia_correto(client, headers_a):

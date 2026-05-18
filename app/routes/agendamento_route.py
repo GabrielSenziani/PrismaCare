@@ -68,19 +68,13 @@ def deletar_agendamento(
     usuario: dict = Depends(obter_usuario_logado),
     conn: sqlite3.Connection = Depends(get_db),
 ):
-    existente = agendamento_repo.buscar_agendamento_por_id(conn, agendamento_id)
+    existente = agendamento_repo.buscar_agendamento_por_id(conn, agendamento_id, include_inactive=True)
     if not existente:
         raise HTTPException(status_code=404, detail="Agendamento não encontrado")
     if not agendamento_repo.pertence_ao_usuario(conn, agendamento_id, usuario["id"]):
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    try:
-        agendamento_repo.deletar_agendamento(conn, agendamento_id)
-    except sqlite3.IntegrityError:
-        raise HTTPException(
-            status_code=409,
-            detail="Agendamento possui registros vinculados e não pode ser removido",
-        )
+    agendamento_repo.deletar_agendamento(conn, agendamento_id)
     return {"message": "Agendamento deletado com sucesso"}
 
 

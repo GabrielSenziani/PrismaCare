@@ -40,26 +40,48 @@ def listar_agendamentos(conn: sqlite3.Connection, id_usuario: int | None = None)
             """SELECT a.* FROM agendamentos a
                JOIN medicamentos m ON a.id_medicamento = m.id
                WHERE m.id_usuario = ?
+                 AND a.ativo = 1
                ORDER BY a.id ASC""",
             (id_usuario,),
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM agendamentos ORDER BY id ASC").fetchall()
+        rows = conn.execute("SELECT * FROM agendamentos WHERE ativo = 1 ORDER BY id ASC").fetchall()
     return [_converter(conn, row) for row in rows]
 
 
-def buscar_agendamento_por_id(conn: sqlite3.Connection, agendamento_id: int) -> dict | None:
-    row = conn.execute(
-        "SELECT * FROM agendamentos WHERE id = ?",
-        (agendamento_id,),
-    ).fetchone()
+def buscar_agendamento_por_id(
+    conn: sqlite3.Connection,
+    agendamento_id: int,
+    *,
+    include_inactive: bool = False,
+) -> dict | None:
+    if include_inactive:
+        row = conn.execute(
+            "SELECT * FROM agendamentos WHERE id = ?",
+            (agendamento_id,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM agendamentos WHERE id = ? AND ativo = 1",
+            (agendamento_id,),
+        ).fetchone()
     return _converter(conn, row) if row else None
 
 
 def deletar_agendamento(conn: sqlite3.Connection, agendamento_id: int) -> bool:
     with conn:
-        conn.execute("DELETE FROM agendamento_horarios WHERE id_agendamento = ?", (agendamento_id,))
-        cursor = conn.execute("DELETE FROM agendamentos WHERE id = ?", (agendamento_id,))
+        conn.execute(
+            """
+            UPDATE confirmacoes
+            SET status = 'CANCELADO'
+            WHERE id_agendamento = ? AND status = 'PENDENTE'
+            """,
+            (agendamento_id,),
+        )
+        cursor = conn.execute(
+            "UPDATE agendamentos SET ativo = 0 WHERE id = ? AND ativo = 1",
+            (agendamento_id,),
+        )
     return cursor.rowcount > 0
 
 
@@ -78,7 +100,7 @@ def atualizar_agendamento(
     agendamento_id: int,
     dados: dict[str, Any],
 ) -> dict | None:
-    atual = buscar_agendamento_por_id(conn, agendamento_id)
+    atual = buscar_agendamento_por_id(conn, agendamento_id, include_inactive=True)
     if not atual:
         return None
 
@@ -111,7 +133,7 @@ def atualizar_agendamento(
         )
         if "horarios" in dados:
             _replace_horarios(conn, agendamento_id, horarios)
-    return buscar_agendamento_por_id(conn, agendamento_id)
+    return buscar_agendamento_por_id(conn, agendamento_id, include_inactive=True)
 
 
 def listar_agendamentos_com_horarios(conn: sqlite3.Connection, id_usuario: int, hoje: str) -> list[dict]:

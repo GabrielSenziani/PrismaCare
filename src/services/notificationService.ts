@@ -19,6 +19,7 @@ const REMINDER_CHANNEL_ID = 'dose-reminders';
 const REMINDER_SOURCE = 'prismacare';
 const REMINDER_KIND = 'dose-reminder';
 const OVERDUE_KIND = 'dose-overdue';
+const LOCAL_REMINDER_GRACE_MINUTES = 2;
 
 export type DoseReminderInput = {
   confirmacao_id: number;
@@ -44,6 +45,7 @@ let notificationPressHandler: DoseNotificationPressHandler | null = null;
 let notificationResponseSubscription: NotificationSubscription | null = null;
 let lastHandledNotificationKey: string | null = null;
 let checkedInitialNotificationResponse = false;
+const immediateReminderDeliveredAt = new Map<string, number>();
 
 function getNotificationsModule(): NotificationsModule | null {
   if (Platform.OS === 'web' || isExpoGoRuntime()) return null;
@@ -174,22 +176,65 @@ function parseLocalDateTime(value: string): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function buildValidReminders(doses: DoseReminderInput[]) {
-  const now = Date.now();
+type ReminderSyncItem = {
+  dose: DoseReminderInput;
+  reminderKey: string;
+  scheduledAt: Date;
+  behavior: 'schedule' | 'notify-now';
+};
 
-  return doses.flatMap((dose) => {
-    if (dose.status !== 'PENDENTE') return [];
+function buildReminderSyncItems(doses: DoseReminderInput[]) {
+  const now = Date.now();
+  const graceMs = LOCAL_REMINDER_GRACE_MINUTES * 60 * 1000;
+  const reminders: ReminderSyncItem[] = [];
+
+  for (const dose of doses) {
+    if (dose.status !== 'PENDENTE') {
+      continue;
+    }
 
     const scheduledAt = parseLocalDateTime(dose.horario_previsto);
-    if (!scheduledAt || scheduledAt.getTime() <= now) return [];
+    if (!scheduledAt) {
+      continue;
+    }
 
     const reminderKey = reminderKeyFor(dose.confirmacao_id);
-    return [{
-      dose,
+    const scheduledTime = scheduledAt.getTime();
+
+    if (scheduledTime > now) {
+      reminders.push({
+        dose,
+        reminderKey,
+        scheduledAt,
+        behavior: 'schedule',
+      });
+      continue;
+    }
+
+    if (now - scheduledTime <= graceMs) {
+      reminders.push({
+        dose,
+        reminderKey,
+        scheduledAt,
+        behavior: 'notify-now',
+      });
+    }
+  }
+
+  return reminders;
+}
+
+function buildReminderContent(reminder: ReminderSyncItem['dose'], reminderKey: string) {
+  return {
+    title: 'Hora do medicamento',
+    body: `Está na hora de tomar ${reminder.medicamento.nome} ${reminder.medicamento.dosagem}.`,
+    data: {
+      source: REMINDER_SOURCE,
+      kind: REMINDER_KIND,
+      confirmacaoId: reminder.confirmacao_id,
       reminderKey,
-      scheduledAt,
-    }];
-  });
+    },
+  };
 }
 
 export async function syncDoseReminders(doses: DoseReminderInput[]) {
@@ -204,8 +249,11 @@ export async function syncDoseReminders(doses: DoseReminderInput[]) {
     const granted = await requestNotificationPermission();
     if (!granted) return;
 
-    const validReminders = buildValidReminders(doses);
-    const validKeys = new Set(validReminders.map((reminder) => reminder.reminderKey));
+    const reminders = buildReminderSyncItems(doses);
+    const futureReminders = reminders.filter((reminder) => reminder.behavior === 'schedule');
+    const immediateReminders = reminders.filter((reminder) => reminder.behavior === 'notify-now');
+    const futureKeys = new Set(futureReminders.map((reminder) => reminder.reminderKey));
+    const immediateKeys = new Set(immediateReminders.map((reminder) => reminder.reminderKey));
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
     const scheduledDoseReminders = scheduled.filter((notification) =>
       isPrismaCareDoseReminder(notification.content.data as ReminderData | null | undefined),
@@ -217,25 +265,16 @@ export async function syncDoseReminders(doses: DoseReminderInput[]) {
       if (typeof data.reminderKey !== 'string') return;
 
       scheduledKeys.add(data.reminderKey);
-      if (!validKeys.has(data.reminderKey)) {
+      if (!futureKeys.has(data.reminderKey)) {
         await Notifications.cancelScheduledNotificationAsync(notification.identifier);
       }
     }));
 
-    await Promise.all(validReminders.map(async ({ dose, reminderKey, scheduledAt }) => {
+    await Promise.all(futureReminders.map(async ({ dose, reminderKey, scheduledAt }) => {
       if (scheduledKeys.has(reminderKey)) return;
 
       await Notifications.scheduleNotificationAsync({
-        content: {
-          title: 'Hora do medicamento',
-          body: `Está na hora de tomar ${dose.medicamento.nome} ${dose.medicamento.dosagem}.`,
-          data: {
-            source: REMINDER_SOURCE,
-            kind: REMINDER_KIND,
-            confirmacaoId: dose.confirmacao_id,
-            reminderKey,
-          },
-        },
+        content: buildReminderContent(dose, reminderKey),
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: scheduledAt,
@@ -243,6 +282,25 @@ export async function syncDoseReminders(doses: DoseReminderInput[]) {
         },
       });
     }));
+
+    for (const { dose, reminderKey } of immediateReminders) {
+      if (immediateReminderDeliveredAt.has(reminderKey)) {
+        continue;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: buildReminderContent(dose, reminderKey),
+        trigger: null,
+      });
+      immediateReminderDeliveredAt.set(reminderKey, Date.now());
+    }
+
+    const activeKeys = new Set(reminders.map((reminder) => reminder.reminderKey));
+    for (const key of [...immediateReminderDeliveredAt.keys()]) {
+      if (!activeKeys.has(key) || !immediateKeys.has(key)) {
+        immediateReminderDeliveredAt.delete(key);
+      }
+    }
   } catch (error) {
     console.warn('Falha ao sincronizar notificações locais de dose.', error);
   }

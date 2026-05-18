@@ -112,5 +112,30 @@ def test_nao_deleta_agendamento_com_confirmacao_vinculada(client, headers_a):
 
     r = client.delete(f"/api/agendamentos/{agend_id}", headers=headers_a)
 
-    assert r.status_code == 409
-    assert "registros vinculados" in r.text
+    assert r.status_code == 200
+
+    confirmacao_atualizada = client.get(f"/api/confirmacoes/{confirmacao.json()['id']}", headers=headers_a)
+    assert confirmacao_atualizada.status_code == 200
+    assert confirmacao_atualizada.json()["status"] == "CANCELADO"
+
+
+def test_delete_repetido_e_idempotente(client, headers_a):
+    med_id = _criar_medicamento(client, headers_a)
+    agend_id = _criar_agendamento(client, headers_a, med_id)
+
+    primeiro = client.delete(f"/api/agendamentos/{agend_id}", headers=headers_a)
+    segundo = client.delete(f"/api/agendamentos/{agend_id}", headers=headers_a)
+
+    assert primeiro.status_code == 200
+    assert segundo.status_code == 200
+
+
+def test_agendamento_inativo_some_da_listagem(client, headers_a):
+    med_id = _criar_medicamento(client, headers_a)
+    agend_id = _criar_agendamento(client, headers_a, med_id)
+
+    client.delete(f"/api/agendamentos/{agend_id}", headers=headers_a)
+    listagem = client.get("/api/agendamentos", headers=headers_a)
+
+    assert listagem.status_code == 200
+    assert all(item["id"] != agend_id for item in listagem.json())

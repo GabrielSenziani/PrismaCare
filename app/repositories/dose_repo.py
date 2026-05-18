@@ -57,6 +57,7 @@ def listar_doses_hoje(conn: sqlite3.Connection, id_usuario: int, hoje: str, time
         JOIN agendamentos a  ON c.id_agendamento = a.id
         JOIN medicamentos m  ON a.id_medicamento = m.id
         WHERE m.id_usuario = ?
+          AND a.ativo = 1
           AND date(c.data_hora_prevista) = date(?)
         ORDER BY c.data_hora_prevista ASC
         """,

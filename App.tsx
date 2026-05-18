@@ -19,6 +19,7 @@ import ContatosScreen from './src/screens/ContatosScreen';
 import DosesScreen from './src/screens/DosesScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { configureDoseNotifications } from './src/services/notificationService';
+import { syncCurrentDoseReminders } from './src/services/doseReminderSync';
 import { readAuthIntroSeen } from './src/services/appPreferences';
 import { getGoogleSigninModule, isExpoGoRuntime } from './src/utils/googleSignin';
 
@@ -109,7 +110,7 @@ function Navigation() {
 }
 
 function AppShell() {
-  const { authReady, token } = useContext(AuthContext);
+  const { authReady, token, timezoneConfirmed } = useContext(AuthContext);
   const [navigationReady, setNavigationReady] = useState(false);
   const pendingConfirmacaoIdRef = useRef<number | null>(null);
 
@@ -144,6 +145,16 @@ function AppShell() {
   useEffect(() => {
     flushPendingDoseNavigation();
   }, [flushPendingDoseNavigation]);
+
+  useEffect(() => {
+    if (!authReady || !token || timezoneConfirmed !== true) {
+      return;
+    }
+
+    void syncCurrentDoseReminders().catch((error) => {
+      console.warn('Falha ao sincronizar lembretes locais no bootstrap autenticado.', error);
+    });
+  }, [authReady, token, timezoneConfirmed]);
 
   return (
     <NavigationContainer

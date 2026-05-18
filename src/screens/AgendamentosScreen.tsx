@@ -18,6 +18,7 @@ const DateTimePicker: any = Platform.OS !== 'web'
 import { colors } from '../theme/colors';
 import PrimaryButton from '../components/PrimaryButton';
 import { api } from '../services/api';
+import { syncCurrentDoseReminders } from '../services/doseReminderSync';
 
 type TipoRecorrencia = 'diario' | 'dias_semana';
 
@@ -258,6 +259,7 @@ export default function AgendamentosScreen() {
       }
       fecharForm();
       await buscar();
+      await syncCurrentDoseReminders();
     } catch (e: any) {
       Alert.alert('Erro', e.message);
     } finally {
@@ -288,6 +290,7 @@ export default function AgendamentosScreen() {
         fecharForm();
       }
       await buscar();
+      await syncCurrentDoseReminders();
     } catch (e: any) {
       Alert.alert('Erro', e.message);
     } finally {
