@@ -1,8 +1,8 @@
 import 'react-native-gesture-handler';
-import React, { useContext, useEffect } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Alert, ActivityIndicator, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { colors } from './src/theme/colors';
 import { AuthProvider, AuthContext } from './src/contexts/AuthContext';
@@ -32,10 +32,11 @@ export type RootStackParamList = {
   Medicamentos: undefined;
   Agendamentos: undefined;
   Contatos: undefined;
-  Doses: undefined;
+  Doses: { confirmacaoId?: number } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 const screenOptions = {
   headerStyle: { backgroundColor: colors.background },
@@ -87,6 +88,54 @@ function Navigation() {
   );
 }
 
+function AppShell() {
+  const { authReady, token } = useContext(AuthContext);
+  const [navigationReady, setNavigationReady] = useState(false);
+  const pendingConfirmacaoIdRef = useRef<number | null>(null);
+
+  const flushPendingDoseNavigation = useCallback(() => {
+    if (!authReady || !navigationReady || !navigationRef.isReady()) {
+      return;
+    }
+
+    if (!token) {
+      pendingConfirmacaoIdRef.current = null;
+      return;
+    }
+
+    const confirmacaoId = pendingConfirmacaoIdRef.current;
+    if (!confirmacaoId) {
+      return;
+    }
+
+    pendingConfirmacaoIdRef.current = null;
+    navigationRef.navigate('Doses', { confirmacaoId });
+  }, [authReady, navigationReady, token]);
+
+  const handleDoseNotificationPress = useCallback((confirmacaoId: number) => {
+    pendingConfirmacaoIdRef.current = confirmacaoId;
+    flushPendingDoseNavigation();
+  }, [flushPendingDoseNavigation]);
+
+  useEffect(() => {
+    configureDoseNotifications(handleDoseNotificationPress);
+  }, [handleDoseNotificationPress]);
+
+  useEffect(() => {
+    flushPendingDoseNavigation();
+  }, [flushPendingDoseNavigation]);
+
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => setNavigationReady(true)}
+    >
+      <StatusBar style="light" translucent />
+      <Navigation />
+    </NavigationContainer>
+  );
+}
+
 export default function App() {
   useEffect(() => {
     const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -97,15 +146,11 @@ export default function App() {
         offlineAccess: false,
       });
     }
-    configureDoseNotifications();
   }, []);
 
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <StatusBar style="light" translucent />
-        <Navigation />
-      </NavigationContainer>
+      <AppShell />
     </AuthProvider>
   );
 }
