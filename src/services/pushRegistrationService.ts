@@ -1,7 +1,18 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { registerPushTokenRequest } from './api';
+import { shipClientLog } from './clientLog';
 import { isExpoGoRuntime } from '../utils/googleSignin';
+
+function log(event: string, data?: Record<string, unknown>) {
+  console.log(`[push] ${event}`, data ?? '');
+  shipClientLog(`push.${event}`, data);
+}
+
+function warn(event: string, data?: Record<string, unknown>) {
+  console.warn(`[push] ${event}`, data ?? '');
+  shipClientLog(`push.${event}`, data, 'warn');
+}
 
 type NotificationsModule = typeof import('expo-notifications');
 
@@ -15,7 +26,7 @@ function getNotificationsModule(): NotificationsModule | null {
   try {
     notificationsModule = require('expo-notifications') as NotificationsModule;
   } catch (error) {
-    console.warn('[push] expo-notifications require falhou', error);
+    warn('expo_notifications_require_falhou', { error: String(error) });
     notificationsModule = null;
   }
 
@@ -35,7 +46,7 @@ function resolveDeviceName(): string | undefined {
 }
 
 export async function syncRemotePushTokenRegistration(userId: number | null, timezoneConfirmed: boolean) {
-  console.log('[push] sync chamada', {
+  log('sync_chamada', {
     userId,
     timezoneConfirmed,
     platform: Platform.OS,
@@ -44,31 +55,31 @@ export async function syncRemotePushTokenRegistration(userId: number | null, tim
   });
 
   if (!userId) {
-    console.log('[push] skip: userId ausente');
+    log('skip_userId_ausente');
     return;
   }
   if (!timezoneConfirmed) {
-    console.log('[push] skip: timezone nao confirmado');
+    log('skip_timezone_nao_confirmado');
     return;
   }
   if (Platform.OS === 'web') {
-    console.log('[push] skip: platform web');
+    log('skip_platform_web');
     return;
   }
   if (isExpoGoRuntime()) {
-    console.log('[push] skip: rodando em Expo Go');
+    log('skip_expo_go');
     return;
   }
 
   const Notifications = getNotificationsModule();
   if (!Notifications) {
-    console.log('[push] skip: modulo expo-notifications indisponivel');
+    log('skip_modulo_notifications_indisponivel');
     return;
   }
 
   const projectId = resolveProjectId();
   if (!projectId) {
-    console.log('[push] skip: projectId ausente', {
+    log('skip_projectId_ausente', {
       extra: Constants.expoConfig?.extra,
       easConfig: Constants.easConfig,
     });
@@ -78,43 +89,43 @@ export async function syncRemotePushTokenRegistration(userId: number | null, tim
   try {
     const current = await Notifications.getPermissionsAsync();
     let status = current.status;
-    console.log('[push] permissao atual', status);
+    log('permissao_atual', { status });
 
     if (status !== 'granted') {
       const requested = await Notifications.requestPermissionsAsync();
       status = requested.status;
-      console.log('[push] permissao apos request', status);
+      log('permissao_apos_request', { status });
     }
 
     if (status !== 'granted') {
-      console.log('[push] skip: permissao negada');
+      log('skip_permissao_negada');
       return;
     }
 
     const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
     const expoPushToken = tokenResponse.data;
-    console.log('[push] expo token obtido', expoPushToken ? `${expoPushToken.slice(0, 20)}...` : '(vazio)');
+    log('expo_token_obtido', { preview: expoPushToken ? `${expoPushToken.slice(0, 20)}...` : null });
     if (!expoPushToken) {
-      console.log('[push] skip: token vazio');
+      log('skip_token_vazio');
       return;
     }
 
     const registrationKey = `${userId}:${expoPushToken}`;
     if (registrationKey === lastRegisteredKey) {
-      console.log('[push] skip: token ja registrado nesta sessao');
+      log('skip_token_ja_registrado_na_sessao');
       return;
     }
 
-    console.log('[push] POST /api/push-tokens iniciando');
+    log('post_iniciando');
     const response = await registerPushTokenRequest({
       expo_push_token: expoPushToken,
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
       device_name: resolveDeviceName(),
     });
     lastRegisteredKey = registrationKey;
-    console.log('[push] POST /api/push-tokens ok', response);
+    log('post_ok', { response: response as unknown as Record<string, unknown> });
   } catch (error) {
-    console.warn('[push] falha no registro remoto', error);
+    warn('falha_registro_remoto', { error: String(error) });
   }
 }
 

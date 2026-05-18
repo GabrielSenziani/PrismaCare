@@ -19,6 +19,7 @@ from app.routes.monitor_route import router as monitor_router
 from app.routes.historico_route import router as historico_router
 from app.routes.whatsapp_route import router as whatsapp_router
 from app.routes.push_token_route import router as push_token_router
+from app.routes.client_log_route import router as client_log_router
 from app.services.monitor_service import varrer_e_notificar
 
 
@@ -60,6 +61,7 @@ app.include_router(notificacao_router, prefix="/api", tags=["Notificações"])
 app.include_router(monitor_router, prefix="/api", tags=["Monitor"])
 app.include_router(whatsapp_router, prefix="/api", tags=["WhatsApp"])
 app.include_router(push_token_router, prefix="/api")
+app.include_router(client_log_router, prefix="/api")
 app.include_router(dose_router, prefix="/api", tags=["Doses"])
 app.include_router(historico_router, prefix="/api", tags=["Doses"])
 
