@@ -6,13 +6,14 @@ from app.core.phone_auth import normalize_existing_brazil_phone
 from app.database import get_db
 from app.repositories import user_repo
 from app.schemas.user_schema import UserCreate, UserProfileUpdate, UserResponse, TimezoneUpdate
-from app.security import hash_senha, obter_usuario_logado
+from app.security import hash_senha, obter_usuario_logado, validar_forca_senha
 
 router = APIRouter()
 
 
 @router.post("/users", response_model=UserResponse, status_code=201)
 def create_user(user: UserCreate, conn: sqlite3.Connection = Depends(get_db)):
+    validar_forca_senha(user.senha)
     existente = user_repo.buscar_usuario_por_email(conn, user.email)
     if existente:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")

@@ -15,6 +15,22 @@ from app.database import get_db
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
+SENHA_FRACA_DETALHE = "A senha deve ter pelo menos 8 caracteres, incluindo letra e número."
+
+
+def validar_forca_senha(senha: str) -> None:
+    if (
+        not isinstance(senha, str)
+        or len(senha) < 8
+        or not any(c.isalpha() for c in senha)
+        or not any(c.isdigit() for c in senha)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=SENHA_FRACA_DETALHE,
+        )
+
+
 def hash_senha(senha: str) -> str:
     senha_bytes = senha.encode("utf-8")
     hashed = bcrypt.hashpw(senha_bytes, bcrypt.gensalt())

@@ -38,25 +38,26 @@ O PrismaCare é um sistema acadêmico voltado ao gerenciamento de medicamentos, 
 | Validação | Pydantic v2 |
 | Mobile | React Native + Expo |
 | Linguagem mobile | TypeScript (strict) |
-| Navegação | React Navigation v7 |
-| Infraestrutura | Docker + Nginx + SSL |
+| Navegação | React Navigation v7 (com deep linking) |
+| Push notifications | Expo Notifications |
+| Testes | pytest + FastAPI TestClient |
+| Infraestrutura | Docker + Nginx + SSL (Let's Encrypt) |
 
 ---
 
 ## Funcionalidades
 
-- Cadastro e autenticação de usuários com JWT
-- Login com Google em Android development build
-- Provider configurável de WhatsApp: simulado ou Evolution API
-- CRUD de medicamentos, contatos de segurança e agendamentos
-- Listagem automática de doses do dia com status (`PENDENTE`, `CONFIRMADO`, `ATRASADO`)
-- Confirmação de dose pelo app mobile
-- Monitor automático: doses não confirmadas em 5 min geram notificação para os contatos
-- Anti-duplicata de notificações por índice único + verificação na aplicação
-- Rate limiting por IP e por usuário (login, refresh e API geral)
-- Bloqueio progressivo de login após falhas consecutivas
-- Revogação de sessão individual ou total (`logout-all`)
-- Isolamento total de dados por usuário autenticado
+- **Três fluxos de autenticação**: e-mail/senha, Google Sign-In (Android dev build) e telefone com OTP via WhatsApp
+- **Onboarding** dedicado: tela de introdução, escolha de fluxo, confirmação de fuso horário e perfil
+- **CRUD completo** de medicamentos, agendamentos, contatos de segurança e confirmações de dose
+- **Recorrência flexível** de agendamentos: diária, por dias da semana ou data específica, com múltiplos horários
+- **Geração automática de confirmações** ao consultar `/api/doses/hoje` e histórico paginável por período
+- **Monitor automático (APScheduler)**: doses não confirmadas após a tolerância configurada são marcadas como `NAO_CONFIRMADO`, geram notificação WhatsApp para os contatos e push remoto opcional para o próprio usuário
+- **WhatsApp provider configurável**: simulação local ou Evolution API
+- **Push notifications via Expo**: registro de tokens por dispositivo, envio remoto para doses atrasadas e deduplicação por confirmação+token
+- **Deep linking** para confirmação de dose direto da notificação
+- **Isolamento total** de dados por usuário autenticado (validação ownership em todas as rotas)
+- **Auditoria estruturada** de eventos de autenticação sem expor segredos
 
 ---
 
@@ -71,30 +72,33 @@ PrismaCare/
 │   ├── security.py               # JWT, bcrypt, dependency injection
 │   │
 │   ├── core/
-│   │   ├── config.py             # Settings carregadas do .env
+│   │   ├── config.py             # Settings carregadas do .env (com TRUST_PROXY_HEADERS, lockouts, etc.)
 │   │   ├── constants.py          # Enums de status (PENDENTE, CONFIRMADO, etc.)
 │   │   ├── audit.py              # Log de eventos de autenticação
 │   │   ├── rate_limit.py         # Rate limiter por IP e usuário
-│   │   └── security_controls.py  # Enforcers e extração de IP
+│   │   ├── phone_auth.py         # Normalização BR + geração/validação de OTP
+│   │   └── security_controls.py  # client_ip (X-Real-IP), rate-limit enforcers
 │   │
 │   ├── middleware/
-│   │   └── security_middleware.py # Headers de segurança, rate limit, log de erros
+│   │   └── security_middleware.py # Headers (HSTS, COOP, Permissions-Policy), rate limit, auditoria 401/403
 │   │
 │   ├── routes/                   # Endpoints da API (um arquivo por domínio)
-│   │   ├── auth_route.py         # /api/auth/*
+│   │   ├── auth_route.py         # /api/auth/* (login, google, telefone, refresh, logout)
 │   │   ├── user_route.py         # /api/users/*
 │   │   ├── medicamento_route.py  # /api/medicamentos/*
 │   │   ├── contato_route.py      # /api/contatos/*
 │   │   ├── agendamento_route.py  # /api/agendamentos/*
-│   │   ├── dose_route.py         # /api/doses/*
+│   │   ├── dose_route.py         # /api/doses/hoje
 │   │   ├── historico_route.py    # /api/doses/historico
 │   │   ├── confirmacao_route.py  # /api/confirmacoes/*
 │   │   ├── notificacao_route.py  # /api/notificacoes/*
-│   │   ├── monitor_route.py      # /api/monitor/*
-│   │   └── whatsapp_route.py     # /api/whatsapp/*
+│   │   ├── monitor_route.py      # /api/monitor/varredura (gated)
+│   │   ├── whatsapp_route.py     # /api/whatsapp/* (status + test-send gated)
+│   │   ├── push_token_route.py   # /api/push-tokens/* (registro/unregister)
+│   │   └── client_log_route.py   # /api/client-logs (telemetria autenticada)
 │   │
 │   ├── repositories/             # Acesso ao banco (queries SQLite)
-│   │   ├── auth_repo.py
+│   │   ├── auth_repo.py          # Tokens, eventos, lockout por (email,ip) e email-only
 │   │   ├── user_repo.py
 │   │   ├── medicamento_repo.py
 │   │   ├── contato_repo.py
@@ -102,7 +106,8 @@ PrismaCare/
 │   │   ├── dose_repo.py
 │   │   ├── historico_repo.py
 │   │   ├── confirmacao_repo.py
-│   │   └── notificacao_repo.py
+│   │   ├── notificacao_repo.py
+│   │   └── push_token_repo.py
 │   │
 │   ├── schemas/                  # Validação com Pydantic v2
 │   │   ├── user_schema.py
@@ -112,16 +117,23 @@ PrismaCare/
 │   │   ├── dose_schema.py
 │   │   ├── historico_schema.py
 │   │   ├── confirmacao_schema.py
-│   │   └── notificacao_schema.py
+│   │   ├── notificacao_schema.py
+│   │   ├── push_schema.py
+│   │   └── whatsapp_schema.py
 │   │
 │   └── services/
-│       ├── monitor_service.py    # varrer_e_notificar() — varredura de doses atrasadas
-│       └── whatsapp_service.py   # provider simulado / Evolution API
+│       ├── monitor_service.py            # varrer_e_notificar() — varredura de doses atrasadas
+│       ├── whatsapp_service.py           # provider simulado / Evolution API
+│       └── push_notification_service.py  # envio Expo Push para doses atrasadas
 │
 ├── src/                          # Frontend React Native / Expo
 │   ├── screens/
+│   │   ├── AuthIntroScreen.tsx      # Tela inicial pré-login (escolha de fluxo)
+│   │   ├── AuthEntryScreen.tsx      # Roteamento por e-mail (login vs. registro)
 │   │   ├── LoginScreen.tsx
 │   │   ├── RegisterScreen.tsx
+│   │   ├── OnboardingScreen.tsx
+│   │   ├── TimezoneWelcomeScreen.tsx
 │   │   ├── ForgotPasswordScreen.tsx
 │   │   ├── HomeScreen.tsx
 │   │   ├── MedicamentosScreen.tsx
@@ -129,19 +141,19 @@ PrismaCare/
 │   │   ├── ContatosScreen.tsx
 │   │   └── DosesScreen.tsx
 │   │
-│   ├── components/
-│   │   ├── InputField.tsx        # Input reutilizável com ícone e validação
-│   │   └── PrimaryButton.tsx     # Botão com gradiente e estado de loading
-│   │
-│   ├── contexts/
-│   │   └── AuthContext.tsx       # Contexto de autenticação (signIn / signOut)
-│   │
+│   ├── components/                # Inputs, botões e componentes reutilizáveis
+│   ├── contexts/                  # AuthContext (signIn / signOut / refresh)
 │   ├── services/
-│   │   └── api.ts                # Cliente HTTP com Bearer token
-│   │
-│   └── theme/
-│       └── colors.ts             # Paleta de cores do sistema
+│   │   ├── api.ts                 # Cliente HTTP com Bearer + refresh automático
+│   │   ├── clientLog.ts           # Telemetria autenticada (best-effort)
+│   │   ├── pushRegistrationService.ts
+│   │   ├── notificationService.ts
+│   │   ├── sessionStorage.ts
+│   │   └── appPreferences.ts
+│   ├── utils/                     # Helpers de timezone, telefone, Google Sign-In
+│   └── theme/                     # Paleta de cores
 │
+├── tests/                        # Suíte pytest (incluindo regressão de segurança)
 ├── assets/                       # Ícones e imagens do app
 ├── App.tsx                       # Navegação principal (Stack Navigator)
 ├── index.ts                      # Entry point do Expo
@@ -158,29 +170,35 @@ PrismaCare/
 
 ## Banco de dados
 
-O schema é criado automaticamente na primeira execução. Tabelas e relacionamentos:
+O schema é criado/migrado automaticamente na inicialização (`init_db`), incluindo migrações idempotentes para colunas adicionadas posteriormente.
+
+**Domínio principal:**
 
 ```
 users
- └── medicamentos        (id_usuario → users.id)
-      └── agendamentos   (id_medicamento → medicamentos.id)
-           └── confirmacoes (id_agendamento → agendamentos.id)
-                └── notificacoes (id_confirmacao → confirmacoes.id)
-
-users
- └── contatos            (id_usuario → users.id)
-      └── notificacoes   (id_contato → contatos.id)
-
-users
- └── refresh_tokens      (user_id → users.id)
- └── auth_events         (user_id → users.id)
+ ├── medicamentos                (id_usuario → users.id)
+ │    └── agendamentos           (id_medicamento → medicamentos.id)
+ │         ├── agendamento_horarios   (múltiplos horários por agendamento)
+ │         └── confirmacoes      (id_agendamento → agendamentos.id)
+ │              └── notificacoes (id_confirmacao → confirmacoes.id, id_contato → contatos.id)
+ ├── contatos                    (id_usuario → users.id)
+ └── push_tokens                 (id_usuario → users.id)
+       └── dose_overdue_push_attempts (id_confirmacao, id_push_token)
 ```
 
-Campos extras de autenticação social ficam diretamente em `users`:
+**Autenticação e segurança:**
 
-- `auth_provider`
-- `google_sub`
-- `avatar_url`
+```
+users
+ ├── refresh_tokens              (rotação com SHA-256 do token)
+ ├── auth_events                 (auditoria de login/logout/refresh/blocked)
+ └── phone_verification_codes    (OTP WhatsApp)
+
+login_attempts                   (lockout por par email+ip)
+login_attempts_email             (lockout email-only — defesa contra IP spoofing)
+```
+
+`users` contém ainda campos de auth social/telefone: `auth_provider`, `google_sub`, `avatar_url`, `phone_e164`, `phone_verified_at`, `timezone`, `timezone_confirmed`.
 
 ---
 
@@ -210,32 +228,39 @@ Usuário cria conta
 
 | Grupo | Método | Endpoint | Descrição |
 |---|---|---|---|
-| **Auth** | POST | `/api/auth/login` | Login com email e senha |
+| **Auth** | POST | `/api/auth/lookup-email` | Verifica se um e-mail está cadastrado (rate-limited) |
+| | POST | `/api/auth/register` | Registro por e-mail/senha (senha forte obrigatória) |
+| | POST | `/api/auth/login` | Login com e-mail e senha |
 | | POST | `/api/auth/google` | Login com Google via `id_token` validado no backend |
-| | POST | `/api/auth/lookup-phone` | Validação mínima do telefone para fluxo WhatsApp |
-| | POST | `/api/auth/send-phone-code` | Envia código OTP via WhatsApp |
+| | POST | `/api/auth/lookup-phone` | Normaliza/valida telefone BR (não revela cadastro) |
+| | POST | `/api/auth/send-phone-code` | Envia código OTP via WhatsApp (rate-limited por telefone) |
 | | POST | `/api/auth/verify-phone-code` | Valida OTP e autentica ou libera cadastro por telefone |
 | | POST | `/api/auth/complete-phone-registration` | Conclui cadastro novo com `verification_token` |
-| | POST | `/api/auth/refresh` | Renovar access token |
-| | POST | `/api/auth/logout` | Revogar sessão atual |
-| | POST | `/api/auth/logout-all` | Revogar todas as sessões |
-| **Usuários** | POST | `/api/users` | Criar conta (público) |
+| | POST | `/api/auth/refresh` | Renova access token; revoga refresh anterior |
+| | POST | `/api/auth/logout` | Revoga sessão atual |
+| | POST | `/api/auth/logout-all` | Revoga todas as sessões do usuário |
+| **Usuários** | POST | `/api/users` | Criar conta (público; valida força de senha) |
 | | GET | `/api/users/me` | Perfil do usuário autenticado |
-| | DELETE | `/api/users/{id}` | Deletar conta |
+| | PATCH | `/api/users/me` | Atualizar nome |
+| | PATCH | `/api/users/me/timezone` | Confirmar/alterar timezone IANA |
+| | DELETE | `/api/users/{id}` | Deletar conta (apenas próprio usuário) |
 | **Medicamentos** | GET/POST | `/api/medicamentos` | Listar / criar |
-| | GET/PUT/DELETE | `/api/medicamentos/{id}` | Buscar / atualizar / remover |
+| | GET/PATCH/DELETE | `/api/medicamentos/{id}` | Buscar / atualizar / remover |
 | **Contatos** | GET/POST | `/api/contatos` | Listar / criar |
 | | GET/PATCH/DELETE | `/api/contatos/{id}` | Buscar / atualizar / remover |
-| **Agendamentos** | GET/POST | `/api/agendamentos` | Listar / criar |
+| **Agendamentos** | GET/POST | `/api/agendamentos` | Listar / criar (com recorrência diária ou por dia da semana) |
 | | GET/PATCH/DELETE | `/api/agendamentos/{id}` | Buscar / atualizar / remover |
-| **Doses** | GET | `/api/doses/hoje` | Doses do dia com status |
-| | GET | `/api/doses/historico?data_inicio=YYYY-MM-DD&data_fim=YYYY-MM-DD` | Histórico autenticado de doses por período. Se omitido, usa os últimos 30 dias |
+| **Doses** | GET | `/api/doses/hoje` | Doses do dia com status (gera `PENDENTE` automaticamente) |
+| | GET | `/api/doses/historico?data_inicio=&data_fim=` | Histórico por período (default: últimos 30 dias) |
 | **Confirmações** | GET/POST | `/api/confirmacoes` | Listar / criar |
 | | PUT | `/api/confirmacoes/{id}/confirmar` | Confirmar dose tomada |
 | **Notificações** | GET/POST | `/api/notificacoes` | Listar / criar |
-| **Monitor** | POST | `/api/monitor/varredura` | Disparar varredura manual, controlada por `ENABLE_MANUAL_MONITOR_ENDPOINT` |
-| **WhatsApp** | GET | `/api/whatsapp/status` | Status/configuração sanitizada da integração |
-| | POST | `/api/whatsapp/test-send` | Envio manual de teste, controlado por `ENABLE_WHATSAPP_TEST_ENDPOINT` |
+| **Push tokens** | POST | `/api/push-tokens` | Registrar token Expo do dispositivo |
+| | POST | `/api/push-tokens/unregister` | Desativar token (logout/remoção) |
+| **Monitor** | POST | `/api/monitor/varredura` | Disparar varredura manual (gated por `ENABLE_MANUAL_MONITOR_ENDPOINT`) |
+| **WhatsApp** | GET | `/api/whatsapp/status` | Status sanitizado (nunca expõe `EVOLUTION_API_KEY`) |
+| | POST | `/api/whatsapp/test-send` | Envio manual (gated por `ENABLE_WHATSAPP_TEST_ENDPOINT`) |
+| **Telemetria** | POST | `/api/client-logs` | Logs do cliente autenticado (best-effort) |
 
 Documentação interativa disponível em `/docs` (Swagger UI) após subir o backend.
 
@@ -243,15 +268,44 @@ Documentação interativa disponível em `/docs` (Swagger UI) após subir o back
 
 ## Segurança
 
-- **JWT**: access token com TTL de 15 min + refresh token de 14 dias com rotação
-- **bcrypt**: hash de senha com custo padrão
-- **Refresh token**: armazenado como SHA-256 no banco; revogação individual e total
-- **Rate limiting**: 10 req/min no login, 20/min no refresh, 120/min na API geral
-- **Telefone/OTP**: envio de código com resposta neutra, limite próprio por telefone/IP e conclusão de cadastro novo com `verification_token`
-- **Login lockout**: bloqueio progressivo após 5 falhas (configurável, máx. 60 min)
-- **Headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cache-Control: no-store` em rotas de auth
-- **Isolamento**: todos os dados filtrados pelo `user_id` extraído do JWT
-- **Auditoria**: log de eventos de autenticação sem exposição de senhas ou tokens
+### Autenticação
+- **JWT**: access token (15 min) + refresh token (14 dias) com rotação a cada uso
+- **bcrypt** para hash de senha (com salt aleatório)
+- **Refresh token**: armazenado como SHA-256 no banco; revogação por sessão (`logout`) ou global (`logout-all`)
+- **Política de senha forte** (registro): mínimo 8 caracteres com pelo menos uma letra e um número, mensagem unificada e centralizada
+- **Google Sign-In**: backend valida `id_token`, `aud` e `email_verified` antes de aceitar
+- **OTP por telefone**: código de 6 dígitos via WhatsApp, TTL de 5 minutos, hash do código armazenado, máximo de tentativas por código
+
+### Lockout em camadas (defesa contra brute force e IP spoofing)
+- **Lockout por par `(email, ip)`** — bloqueio progressivo após 5 falhas (15→60 min). Configurável via `LOGIN_LOCKOUT_*`.
+- **Lockout por e-mail (email-only)** — defesa em profundidade contra ataques que rotacionam `X-Forwarded-For`. Threshold mais alto (default 20 falhas → 60 min). Configurável via `EMAIL_LOCKOUT_*`.
+
+### Identificação correta do IP
+- `client_ip()` prioriza `X-Real-IP` (setado pelo Nginx como `$remote_addr`, não spoofável) e cai no **último** elemento de `X-Forwarded-For` (anexado pelo proxy confiável) — nunca no primeiro elemento (controlado pelo cliente).
+- `TRUST_PROXY_HEADERS=false` desliga essa lógica caso o app seja exposto direto à internet (extração só pelo socket).
+
+### Rate limiting
+- Login e refresh por IP e por usuário/e-mail
+- `/api/auth/lookup-email` rate-limited para mitigar enumeração
+- Envio e verificação de OTP têm limites próprios por telefone
+
+### Headers de segurança (todas as respostas)
+- `Strict-Transport-Security` (apenas quando `X-Forwarded-Proto: https`)
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cache-Control: no-store` em rotas de autenticação
+
+### Privacidade e LGPD
+- Logs de simulação WhatsApp **mascaram telefone** (`***últimos-4-dígitos`) e nunca registram nome/dosagem do medicamento. Payload completo só com flag explícita `LOG_SENSITIVE_PAYLOADS=true` (default `false`).
+- `/api/client-logs` exige autenticação — logs do cliente são atribuídos ao `user_id`, sem origem anônima.
+- Auditoria (`auth_events`) registra eventos sem expor senhas ou tokens.
+
+### Isolamento e ownership
+- Todas as rotas de domínio carregam `Depends(obter_usuario_logado)` e validam ownership do recurso por `user_id` ou `pertence_ao_usuario`.
+- Nenhum endpoint expõe tabelas sensíveis (`auth_events`, `login_attempts*`, `refresh_tokens`, `phone_verification_codes`).
 
 ---
 
@@ -279,9 +333,21 @@ EVOLUTION_API_KEY=
 EVOLUTION_INSTANCE_NAME=prismacare
 ENABLE_WHATSAPP_TEST_ENDPOINT=false
 
+# Lockout por par (email, ip)
 LOGIN_LOCKOUT_THRESHOLD=5
 LOGIN_LOCKOUT_MINUTES=15
 LOGIN_LOCKOUT_MAX_MINUTES=60
+
+# Lockout email-only (defesa contra IP spoofing)
+EMAIL_LOCKOUT_THRESHOLD=20
+EMAIL_LOCKOUT_MINUTES=60
+EMAIL_LOCKOUT_MAX_MINUTES=240
+
+# Confiar em X-Real-IP / X-Forwarded-For (mantenha true atrás de Nginx)
+TRUST_PROXY_HEADERS=true
+
+# Logar payloads sensíveis no provider simulado (NUNCA true em produção)
+LOG_SENSITIVE_PAYLOADS=false
 
 RATE_LIMIT_LOGIN_PER_MIN=10
 RATE_LIMIT_REFRESH_PER_MIN=20
@@ -380,11 +446,35 @@ Certifique-se de que o backend esteja acessível e defina `EXPO_PUBLIC_API_BASE_
 
 ---
 
+## Testes
+
+A suíte usa `pytest` com `TestClient` do FastAPI e cria um SQLite isolado por teste:
+
+```bash
+# Toda a suíte
+python -m pytest
+
+# Apenas a regressão de segurança (lockout, headers, senha forte, etc.)
+python -m pytest tests/test_security_hardening.py -v
+```
+
+Cobertura atual:
+
+- Autenticação por e-mail, Google e telefone (OTP)
+- Onboarding e timezone
+- CRUD completo (medicamentos, contatos, agendamentos, doses, histórico)
+- Fluxo de doses com confirmação e migração de status legados
+- Isolamento de dados entre usuários (`test_security_isolation`)
+- Hardening de segurança: bypass de IP via X-Forwarded-For, lockout email-only, headers HSTS/COOP/Permissions-Policy, validação de senha, rate limit em lookup-email, mascaramento de PII no log de simulação, exigência de auth em `/api/client-logs`
+
+---
+
 ## Observações
 
 - O banco `prismacare.db` é criado automaticamente na primeira execução — não commitar.
-- O APScheduler inicia junto com o servidor e varre doses atrasadas a cada 5 minutos.
-- A integração real via Evolution API pode ser usada para notificações e para envio do OTP de login por telefone.
+- O APScheduler inicia junto com o servidor e varre doses atrasadas no intervalo definido por `MONITOR_SCAN_INTERVAL_MINUTES`.
+- A integração real via Evolution API pode ser usada para notificações de contatos e para envio do OTP de login por telefone.
+- Push remoto via Expo é opcional (`EXPO_PUSH_ENABLED=true`) e roda em paralelo com a notificação WhatsApp.
 - Recuperação de senha está em desenvolvimento.
 
 ---

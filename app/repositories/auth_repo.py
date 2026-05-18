@@ -154,6 +154,76 @@ def login_bloqueado(conn: sqlite3.Connection, email: str, ip: str | None) -> tup
     return False, None
 
 
+def buscar_login_attempt_email(conn: sqlite3.Connection, email: str) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM login_attempts_email WHERE email = ?",
+        (email,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def registrar_falha_login_email(
+    conn: sqlite3.Connection,
+    email: str,
+    threshold: int,
+    base_lockout_minutes: int,
+    max_lockout_minutes: int,
+) -> dict:
+    current = buscar_login_attempt_email(conn, email)
+    now = _now_iso()
+
+    if not current:
+        conn.execute(
+            """INSERT INTO login_attempts_email (email, failed_count, last_failed_at, locked_until)
+               VALUES (?, 1, ?, NULL)""",
+            (email, now),
+        )
+        conn.commit()
+        return {"failed_count": 1, "locked_until": None}
+
+    failed_count = int(current["failed_count"]) + 1
+    locked_until = current["locked_until"]
+
+    if failed_count >= threshold:
+        steps = failed_count - threshold + 1
+        lock_minutes = min(base_lockout_minutes * steps, max_lockout_minutes)
+        lock_until_dt = datetime.now(timezone.utc).timestamp() + (lock_minutes * 60)
+        locked_until = datetime.fromtimestamp(lock_until_dt, timezone.utc).isoformat()
+
+    conn.execute(
+        """UPDATE login_attempts_email
+           SET failed_count = ?, last_failed_at = ?, locked_until = ?
+           WHERE email = ?""",
+        (failed_count, now, locked_until, email),
+    )
+    conn.commit()
+    return {"failed_count": failed_count, "locked_until": locked_until}
+
+
+def resetar_falhas_login_email(conn: sqlite3.Connection, email: str) -> None:
+    conn.execute("DELETE FROM login_attempts_email WHERE email = ?", (email,))
+    conn.commit()
+
+
+def login_bloqueado_por_email(
+    conn: sqlite3.Connection, email: str
+) -> tuple[bool, str | None]:
+    current = buscar_login_attempt_email(conn, email)
+    if not current or not current.get("locked_until"):
+        return False, None
+
+    locked_until = current["locked_until"]
+    if locked_until > _now_iso():
+        return True, locked_until
+
+    conn.execute(
+        "UPDATE login_attempts_email SET locked_until = NULL WHERE email = ?",
+        (email,),
+    )
+    conn.commit()
+    return False, None
+
+
 def invalidar_codigos_telefone_ativos(conn: sqlite3.Connection, phone_e164: str) -> None:
     conn.execute(
         """

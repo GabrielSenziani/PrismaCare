@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
+import { persistAuthIntroSeen } from '../services/appPreferences';
 import { RootStackParamList } from '../../App';
 
 type Props = {
@@ -43,6 +44,8 @@ export default function AuthIntroScreen({ navigation }: Props) {
   const scrollRef = useRef<any>(null);
 
   useEffect(() => {
+    void persistAuthIntroSeen();
+
     Animated.parallel([
       Animated.timing(fade, {
         toValue: 1,

@@ -34,6 +34,7 @@ from app.security import (
     gerar_phone_verification_token,
     hash_senha,
     hash_token,
+    validar_forca_senha,
     verificar_senha,
 )
 from app.services.whatsapp_service import enviar_whatsapp
@@ -170,6 +171,8 @@ def process_login(
     enforce_login_rate_limit(request, email)
 
     blocked, locked_until = auth_repo.login_bloqueado(conn, email=email, ip=ip)
+    if not blocked:
+        blocked, locked_until = auth_repo.login_bloqueado_por_email(conn, email=email)
     if blocked:
         auth_repo.registrar_evento_auth(
             conn,
@@ -197,6 +200,13 @@ def process_login(
             base_lockout_minutes=settings.login_lockout_minutes,
             max_lockout_minutes=settings.login_lockout_max_minutes,
         )
+        email_lock = auth_repo.registrar_falha_login_email(
+            conn,
+            email=email,
+            threshold=settings.email_lockout_threshold,
+            base_lockout_minutes=settings.email_lockout_minutes,
+            max_lockout_minutes=settings.email_lockout_max_minutes,
+        )
         auth_repo.registrar_evento_auth(
             conn,
             event="login_failed",
@@ -205,12 +215,13 @@ def process_login(
             email=email,
             ip=ip,
             user_agent=ua,
-            reason=f"failed_count={lock['failed_count']}",
+            reason=f"failed_count={lock['failed_count']} email_failed_count={email_lock['failed_count']}",
         )
         audit_event("login_failed", email=email, ip=ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="E-mail ou senha incorretos")
 
     auth_repo.resetar_falhas_login(conn, email=email, ip=ip)
+    auth_repo.resetar_falhas_login_email(conn, email=email)
 
     return _criar_sessao_auth(conn, request, user, "login_success")
 
@@ -332,8 +343,13 @@ def process_google_login(
 
 
 @router.post("/lookup-email")
-def lookup_email(payload: LookupEmailRequest, conn: sqlite3.Connection = Depends(get_db)):
+def lookup_email(
+    request: Request,
+    payload: LookupEmailRequest,
+    conn: sqlite3.Connection = Depends(get_db),
+):
     email = _normalize_email(payload.email)
+    enforce_login_rate_limit(request, email)
     return {"exists": user_repo.buscar_usuario_por_email(conn, email) is not None}
 
 
@@ -509,8 +525,7 @@ def complete_phone_registration(
 @router.post("/register", status_code=201)
 def register(payload: RegisterRequest, conn: sqlite3.Connection = Depends(get_db)):
     email = _normalize_email(payload.email)
-    if len(payload.password) < 6:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Senha deve ter pelo menos 6 caracteres")
+    validar_forca_senha(payload.password)
 
     existente = user_repo.buscar_usuario_por_email(conn, email)
     if existente:

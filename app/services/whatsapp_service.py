@@ -16,6 +16,15 @@ def _now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _mask_phone(telefone: str | None) -> str:
+    if not telefone:
+        return "***"
+    digits = re.sub(r"\D", "", telefone)
+    if len(digits) >= 4:
+        return f"***{digits[-4:]}"
+    return "***"
+
+
 def normalizar_telefone_whatsapp(telefone: str) -> str | None:
     digits = re.sub(r"\D", "", telefone or "")
     if not digits:
@@ -56,7 +65,9 @@ def enviar_whatsapp(telefone: str, mensagem: str) -> dict:
 
 
 def _enviar_whatsapp_simulado(telefone: str, mensagem: str) -> dict:
-    logger.info("[WHATSAPP SIMULADO] Para %s: %s", telefone, mensagem)
+    logger.info("[WHATSAPP SIMULADO] envio para %s", _mask_phone(telefone))
+    if settings.log_sensitive_payloads:
+        logger.debug("[WHATSAPP SIMULADO] payload: %s", mensagem)
     return {
         "provider": "simulation",
         "status_envio": StatusEnvio.ENVIADO,

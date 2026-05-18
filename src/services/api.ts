@@ -80,6 +80,14 @@ export function setSessionTokens(tokens: SessionTokens | null) {
   if (tokens) _sessionExpiredTriggered = false;
 }
 
+export function getAccessToken(): string | null {
+  return _sessionTokens?.accessToken ?? null;
+}
+
+export function getApiBaseUrl(): string {
+  return BASE;
+}
+
 function readErrorDetail(body: unknown, status: number): string {
   if (body && typeof body === 'object' && 'detail' in body) {
     const detail = (body as { detail?: unknown }).detail;

@@ -19,6 +19,7 @@ import ContatosScreen from './src/screens/ContatosScreen';
 import DosesScreen from './src/screens/DosesScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import { configureDoseNotifications } from './src/services/notificationService';
+import { readAuthIntroSeen } from './src/services/appPreferences';
 import { getGoogleSigninModule, isExpoGoRuntime } from './src/utils/googleSignin';
 
 export type RootStackParamList = {
@@ -48,6 +49,7 @@ const screenOptions = {
 
 function Navigation() {
   const { authReady, token, timezoneConfirmed, sessionExpiredMessage, consumeSessionExpiredMessage } = useContext(AuthContext);
+  const [authIntroSeen, setAuthIntroSeen] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!sessionExpiredMessage) return;
@@ -55,7 +57,23 @@ function Navigation() {
     Alert.alert('Sessao expirada', sessionExpiredMessage);
   }, [consumeSessionExpiredMessage, sessionExpiredMessage]);
 
-  if (!authReady) {
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAuthIntroSeen() {
+      const seen = await readAuthIntroSeen();
+      if (!cancelled) {
+        setAuthIntroSeen(seen);
+      }
+    }
+
+    void loadAuthIntroSeen();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!authReady || authIntroSeen === null) {
     return (
       <View style={styles.bootSplash}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -67,7 +85,9 @@ function Navigation() {
     <Stack.Navigator screenOptions={screenOptions}>
       {token === null ? (
         <>
-          <Stack.Screen name="AuthIntro" component={AuthIntroScreen} options={{ headerShown: false }} />
+          {!authIntroSeen && (
+            <Stack.Screen name="AuthIntro" component={AuthIntroScreen} options={{ headerShown: false }} />
+          )}
           <Stack.Screen name="AuthEntry" component={AuthEntryScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Register" component={RegisterScreen} options={{ title: 'Criar Conta' }} />

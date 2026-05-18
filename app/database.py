@@ -255,6 +255,13 @@ def init_db():
             CREATE UNIQUE INDEX IF NOT EXISTS idx_login_attempts_email_ip
             ON login_attempts (email, ip);
 
+            CREATE TABLE IF NOT EXISTS login_attempts_email (
+                email TEXT PRIMARY KEY,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                last_failed_at TEXT,
+                locked_until TEXT
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_notificacoes_confirmacao_contato
             ON notificacoes (id_confirmacao, id_contato);
 

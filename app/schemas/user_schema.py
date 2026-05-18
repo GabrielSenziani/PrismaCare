@@ -37,14 +37,6 @@ class UserCreate(BaseModel):
             raise ValueError("Telefone inválido")
         return v
 
-    @field_validator("senha")
-    @classmethod
-    def senha_minima(cls, v):
-        if len(v) < 6:
-            raise ValueError("Senha deve ter pelo menos 6 caracteres")
-        return v
-
-
 class UserResponse(BaseModel):
     id: int
     nome: Optional[str] = None

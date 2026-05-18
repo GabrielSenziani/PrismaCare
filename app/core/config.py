@@ -30,6 +30,11 @@ class Settings:
     monitor_tolerance_minutes: int
     monitor_scan_interval_minutes: int
     disable_scheduler: bool
+    trust_proxy_headers: bool
+    log_sensitive_payloads: bool
+    email_lockout_threshold: int
+    email_lockout_minutes: int
+    email_lockout_max_minutes: int
 
 
 def _load_dotenv_if_present() -> None:
@@ -128,6 +133,11 @@ def load_settings() -> Settings:
         monitor_tolerance_minutes=_get_int("MONITOR_TOLERANCE_MINUTES", 5),
         monitor_scan_interval_minutes=_get_int("MONITOR_SCAN_INTERVAL_MINUTES", 5),
         disable_scheduler=_get_bool("DISABLE_SCHEDULER", False),
+        trust_proxy_headers=_get_bool("TRUST_PROXY_HEADERS", True),
+        log_sensitive_payloads=_get_bool("LOG_SENSITIVE_PAYLOADS", False),
+        email_lockout_threshold=_get_int("EMAIL_LOCKOUT_THRESHOLD", 20),
+        email_lockout_minutes=_get_int("EMAIL_LOCKOUT_MINUTES", 60),
+        email_lockout_max_minutes=_get_int("EMAIL_LOCKOUT_MAX_MINUTES", 240),
     )
 
 
