@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 
+from app.core.datetime_utils import confirmation_datetime_iso_for_user
 from app.repositories import agendamento_repo
 
 
@@ -40,7 +41,7 @@ def _gerar_confirmacoes_do_dia(conn: sqlite3.Connection, id_usuario: int, hoje: 
         conn.rollback()
 
 
-def listar_doses_hoje(conn: sqlite3.Connection, id_usuario: int, hoje: str) -> list[dict]:
+def listar_doses_hoje(conn: sqlite3.Connection, id_usuario: int, hoje: str, timezone_name: str | None) -> list[dict]:
     _gerar_confirmacoes_do_dia(conn, id_usuario, hoje)
     rows = conn.execute(
         """
@@ -68,7 +69,10 @@ def listar_doses_hoje(conn: sqlite3.Connection, id_usuario: int, hoje: str) -> l
         resultado.append({
             "confirmacao_id": r["confirmacao_id"],
             "horario_previsto": r["horario_previsto"],
-            "horario_confirmacao": r["horario_confirmacao"],
+            "horario_confirmacao": confirmation_datetime_iso_for_user(
+                r["horario_confirmacao"],
+                timezone_name,
+            ),
             "status": r["status"],
             "medicamento": {
                 "nome": r["med_nome"],

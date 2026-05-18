@@ -42,4 +42,5 @@ def listar_historico(
         id_usuario=usuario["id"],
         data_inicio=str(data_inicio),
         data_fim=str(data_fim),
+        timezone_name=usuario.get("timezone"),
     )

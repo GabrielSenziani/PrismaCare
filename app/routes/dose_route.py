@@ -23,4 +23,9 @@ def listar_doses_hoje(
 ):
     tz = ZoneInfo(usuario.get("timezone") or "America/Sao_Paulo")
     hoje = datetime.now(tz).strftime("%Y-%m-%d")
-    return dose_repo.listar_doses_hoje(conn, id_usuario=usuario["id"], hoje=hoje)
+    return dose_repo.listar_doses_hoje(
+        conn,
+        id_usuario=usuario["id"],
+        hoje=hoje,
+        timezone_name=usuario.get("timezone"),
+    )

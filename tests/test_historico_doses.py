@@ -1,5 +1,8 @@
+import sqlite3
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from app import database
 
 MED_A = {"nome": "Losartana", "dosagem": "50mg", "observacao": ""}
 MED_B = {"nome": "Metformina", "dosagem": "850mg", "observacao": ""}
@@ -49,6 +52,46 @@ def test_historico_retorna_dose_confirmada_no_periodo(client, headers_a):
     assert item["horario_previsto"] == doses[0]["horario_previsto"]
     assert item["horario_confirmacao"]
     assert item["status"] == "CONFIRMADO"
+
+
+def test_historico_retorna_confirmacao_convertida_para_timezone_do_usuario(client, headers_a):
+    med_id, agend_id = _criar_agendamento(client, headers_a, MED_A)
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    confirmacao_id = doses[0]["confirmacao_id"]
+    client.put(f"/api/confirmacoes/{confirmacao_id}/confirmar", headers=headers_a)
+
+    historico = client.get(f"/api/doses/historico?{_periodo_hoje()}", headers=headers_a)
+
+    assert historico.status_code == 200
+    item = historico.json()[0]
+    assert item["confirmacao_id"] == confirmacao_id
+    assert item["horario_confirmacao"].endswith("-03:00")
+
+
+def test_historico_le_registro_legado_local_sem_deslocamento_indevido(client, headers_a):
+    _med_id, agend_id = _criar_agendamento(client, headers_a, MED_A)
+
+    client.get("/api/doses/hoje", headers=headers_a)
+
+    conn = sqlite3.connect(database.DATABASE_PATH)
+    try:
+        conn.execute(
+            """
+            UPDATE confirmacoes
+            SET status = 'CONFIRMADO', data_hora_confirmacao = ?
+            WHERE id_agendamento = ? AND data_hora_prevista = ?
+            """,
+            ("2026-05-18 08:05:00", agend_id, f"{_hoje()} 08:00:00"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    historico = client.get(f"/api/doses/historico?{_periodo_hoje()}", headers=headers_a)
+
+    assert historico.status_code == 200
+    assert historico.json()[0]["horario_confirmacao"].startswith("2026-05-18T08:05:00")
 
 
 def test_historico_retorna_lista_vazia_quando_periodo_sem_doses(client, headers_a):

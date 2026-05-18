@@ -1,11 +1,14 @@
 import sqlite3
 
+from app.core.datetime_utils import confirmation_datetime_iso_for_user
+
 
 def listar_historico(
     conn: sqlite3.Connection,
     id_usuario: int,
     data_inicio: str,
     data_fim: str,
+    timezone_name: str | None,
 ) -> list[dict]:
     rows = conn.execute(
         """
@@ -27,4 +30,12 @@ def listar_historico(
         """,
         (id_usuario, data_inicio, data_fim),
     ).fetchall()
-    return [dict(row) for row in rows]
+    resultado = []
+    for row in rows:
+        item = dict(row)
+        item["horario_confirmacao"] = confirmation_datetime_iso_for_user(
+            item["horario_confirmacao"],
+            timezone_name,
+        )
+        resultado.append(item)
+    return resultado

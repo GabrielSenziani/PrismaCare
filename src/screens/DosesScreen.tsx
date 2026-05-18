@@ -17,6 +17,7 @@ import { colors } from '../theme/colors';
 import { api } from '../services/api';
 import { DoseReminderInput, syncDoseReminders } from '../services/notificationService';
 import PrimaryButton from '../components/PrimaryButton';
+import { formatBusinessTime, formatConfirmationTime } from '../utils/dateTime';
 import { RootStackParamList } from '../../App';
 
 type Dose = DoseReminderInput & {
@@ -145,11 +146,11 @@ export default function DosesScreen({ navigation, route }: Props) {
               <View style={styles.timeRow}>
                 <Ionicons name="time-outline" size={14} color={colors.textMuted} />
                 <Text style={styles.timeText}>
-                  Previsto: {item.horario_previsto?.substring(11, 16) ?? '—'}
+                  Previsto: {formatBusinessTime(item.horario_previsto)}
                 </Text>
                 {item.horario_confirmacao ? (
                   <Text style={styles.timeText}>
-                    {'  '}Confirmado: {item.horario_confirmacao?.substring(11, 16)}
+                    {'  '}Confirmado: {formatConfirmationTime(item.horario_confirmacao)}
                   </Text>
                 ) : null}
               </View>
@@ -191,7 +192,7 @@ export default function DosesScreen({ navigation, route }: Props) {
               <>
                 <Text style={styles.modalBody}>
                   Você tomou {modalDose.medicamento.nome} {modalDose.medicamento.dosagem} das{' '}
-                  {modalDose.horario_previsto?.substring(11, 16) ?? '—'}?
+                  {formatBusinessTime(modalDose.horario_previsto)}?
                 </Text>
                 <PrimaryButton
                   title={confirmLabelForStatus(modalDose.status)}
