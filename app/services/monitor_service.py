@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.core.constants import StatusConfirmacao, StatusEnvio
 from app.core.config import settings
 from app.database import get_connection
-from app.repositories import push_token_repo
+from app.repositories import dose_repo, push_token_repo
 from app.services.push_notification_service import enviar_push_dose_atrasada
 from app.services.whatsapp_service import enviar_whatsapp
 
@@ -25,6 +26,27 @@ def varrer_e_notificar() -> dict:
     push_notificacoes_enviadas = 0
 
     try:
+        usuarios_com_agendamento = conn.execute(
+            """
+            SELECT DISTINCT
+                u.id,
+                u.timezone
+            FROM users u
+            JOIN medicamentos m ON m.id_usuario = u.id
+            JOIN agendamentos a ON a.id_medicamento = m.id
+            WHERE a.ativo = 1
+            """
+        ).fetchall()
+
+        for usuario in usuarios_com_agendamento:
+            timezone_name = usuario["timezone"] or "America/Sao_Paulo"
+            hoje_usuario = datetime.now(ZoneInfo(timezone_name)).strftime("%Y-%m-%d")
+            dose_repo.gerar_confirmacoes_do_dia(
+                conn,
+                id_usuario=usuario["id"],
+                hoje=hoje_usuario,
+            )
+
         limite = (datetime.now() - timedelta(minutes=TOLERANCIA_MINUTOS)).strftime(
             "%Y-%m-%d %H:%M:%S"
         )

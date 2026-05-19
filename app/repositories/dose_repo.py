@@ -5,7 +5,7 @@ from app.core.datetime_utils import confirmation_datetime_iso_for_user
 from app.repositories import agendamento_repo
 
 
-def _gerar_confirmacoes_do_dia(conn: sqlite3.Connection, id_usuario: int, hoje: str) -> None:
+def gerar_confirmacoes_do_dia(conn: sqlite3.Connection, id_usuario: int, hoje: str) -> None:
     """Cria confirmações PENDENTE para agendamentos ativos de hoje que ainda não as têm."""
     agendamentos = agendamento_repo.listar_agendamentos_com_horarios(conn, id_usuario=id_usuario, hoje=hoje)
     weekday = int(datetime.strptime(hoje, "%Y-%m-%d").strftime("%w"))
@@ -42,7 +42,7 @@ def _gerar_confirmacoes_do_dia(conn: sqlite3.Connection, id_usuario: int, hoje: 
 
 
 def listar_doses_hoje(conn: sqlite3.Connection, id_usuario: int, hoje: str, timezone_name: str | None) -> list[dict]:
-    _gerar_confirmacoes_do_dia(conn, id_usuario, hoje)
+    gerar_confirmacoes_do_dia(conn, id_usuario, hoje)
     rows = conn.execute(
         """
         SELECT

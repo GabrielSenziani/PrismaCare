@@ -12,6 +12,10 @@ def _prevista_vencida():
     return (datetime.now(FUSO) - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _horario_vencido():
+    return _prevista_vencida().split(" ")[1][:5]
+
+
 def _criar_stack(client, headers, contato=CONTATO_1):
     med_id = client.post("/api/medicamentos", json=MED, headers=headers).json()["id"]
     contato_id = client.post("/api/contatos", json=contato, headers=headers).json()["id"]
@@ -19,7 +23,7 @@ def _criar_stack(client, headers, contato=CONTATO_1):
         "id_medicamento": med_id,
         "tipo_recorrencia": "diario",
         "dias_semana": None,
-        "horarios": ["08:00"],
+        "horarios": [_horario_vencido()],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers).json()["id"]
@@ -27,13 +31,12 @@ def _criar_stack(client, headers, contato=CONTATO_1):
 
 
 def _criar_confirmacao_vencida(client, headers, agend_id):
-    r = client.post(
-        "/api/confirmacoes",
-        json={"id_agendamento": agend_id, "data_hora_prevista": _prevista_vencida(), "status": "PENDENTE"},
-        headers=headers,
-    )
-    assert r.status_code == 201
-    return r.json()["id"]
+    r = client.get("/api/doses/hoje", headers=headers)
+    assert r.status_code == 200
+    doses = r.json()
+    dose = next((item for item in doses if item["confirmacao_id"] and item["status"] == "PENDENTE"), None)
+    assert dose is not None
+    return dose["confirmacao_id"]
 
 
 # Cenário 1 — notificação simulada fica com status ENVIADO
@@ -102,7 +105,7 @@ def test_multiplos_contatos(client, headers_a):
         "id_medicamento": med_id,
         "tipo_recorrencia": "diario",
         "dias_semana": None,
-        "horarios": ["08:00"],
+        "horarios": [_horario_vencido()],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers_a).json()["id"]
@@ -126,7 +129,7 @@ def test_usuario_sem_contato_nao_quebra(client, headers_a):
         "id_medicamento": med_id,
         "tipo_recorrencia": "diario",
         "dias_semana": None,
-        "horarios": ["08:00"],
+        "horarios": [_horario_vencido()],
         "data_inicio": datetime.now(FUSO).strftime("%Y-%m-%d"),
     }
     agend_id = client.post("/api/agendamentos", json=agend, headers=headers_a).json()["id"]
@@ -139,3 +142,41 @@ def test_usuario_sem_contato_nao_quebra(client, headers_a):
 
     notificacoes = client.get("/api/notificacoes", headers=headers_a).json()
     assert len(notificacoes) == 0
+
+
+def test_varredura_gera_confirmacao_do_dia_antes_de_notificar(client, headers_a, monkeypatch):
+    from app.services.monitor_service import varrer_e_notificar
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            current = datetime(2026, 5, 19, 10, 30, 0)
+            if tz is not None:
+                return current.replace(tzinfo=tz)
+            return current
+
+    monkeypatch.setattr("app.services.monitor_service.datetime", FixedDateTime)
+
+    med_id = client.post("/api/medicamentos", json=MED, headers=headers_a).json()["id"]
+    client.post("/api/contatos", json=CONTATO_1, headers=headers_a)
+    agend = {
+        "id_medicamento": med_id,
+        "tipo_recorrencia": "diario",
+        "dias_semana": None,
+        "horarios": ["08:00"],
+        "data_inicio": "2026-05-19",
+    }
+    client.post("/api/agendamentos", json=agend, headers=headers_a)
+
+    resultado = varrer_e_notificar()
+    assert resultado["confirmacoes_atualizadas"] == 1
+    assert resultado["notificacoes_criadas"] == 1
+    assert resultado["notificacoes_enviadas"] == 1
+
+    doses = client.get("/api/doses/hoje", headers=headers_a).json()
+    assert len(doses) == 1
+    assert doses[0]["status"] == "NAO_CONFIRMADO"
+
+    notificacoes = client.get("/api/notificacoes", headers=headers_a).json()
+    assert len(notificacoes) == 1
+    assert notificacoes[0]["status_envio"] == "ENVIADO"
